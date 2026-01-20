@@ -18,3 +18,6 @@ jobs:
 
       - name: Show output
         run: cat test_output.txt
+
+           - name: Judge decision
+        run: php scripts/judge.php
