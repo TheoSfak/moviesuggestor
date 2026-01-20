@@ -1,0 +1,20 @@
+name: Judge
+
+on: [push, pull_request]
+
+jobs:
+  judge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: |
+          set +e
+          vendor/bin/phpunit > test_output.txt 2>&1
+          echo $? > exit_code.txt
+          set -e
+
+      - name: Show output
+        run: cat test_output.txt
