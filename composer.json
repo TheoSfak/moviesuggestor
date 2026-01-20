@@ -2,6 +2,7 @@
     "name": "theosfak/moviesuggestor",
     "description": "A PHP + MySQL web application that suggests movies to users",
     "type": "project",
+    "license": "MIT",
     "require": {
         "php": ">=8.0"
     },
