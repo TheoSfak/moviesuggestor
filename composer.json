@@ -1,5 +1,5 @@
 {
-    "name": "moviesuggestor",
+    "name": "theosfak/moviesuggestor",
     "description": "A PHP + MySQL web application that suggests movies to users",
     "type": "project",
     "require": {
