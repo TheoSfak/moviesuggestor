@@ -139,28 +139,36 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'movie_id'])) {
-                sendResponse(null, 400, 'user_id and movie_id are required');
+            if (!validateRequired($input, ['user_id', 'tmdb_id'])) {
+                sendResponse(null, 400, 'user_id and tmdb_id are required');
             }
             
             $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
-            $movieId = filter_var($input['movie_id'], FILTER_VALIDATE_INT);
+            $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
             
             if ($userId === false || $userId <= 0) {
                 sendResponse(null, 400, 'user_id must be a positive integer');
             }
             
-            if ($movieId === false || $movieId <= 0) {
-                sendResponse(null, 400, 'movie_id must be a positive integer');
+            if ($tmdbId === false || $tmdbId <= 0) {
+                sendResponse(null, 400, 'tmdb_id must be a positive integer');
             }
             
+            // Extract movie snapshot data
+            $movieData = [
+                'title' => $input['title'] ?? null,
+                'poster_url' => $input['poster_url'] ?? null,
+                'release_year' => isset($input['release_year']) ? filter_var($input['release_year'], FILTER_VALIDATE_INT) : null,
+                'category' => $input['category'] ?? null
+            ];
+            
             // Check if already favorited
-            $isFavorite = $favoritesRepo->isFavorite($userId, $movieId);
+            $isFavorite = $favoritesRepo->isFavorite($userId, $tmdbId);
             if ($isFavorite) {
                 sendResponse(['message' => 'Movie is already in favorites'], 200);
             }
             
-            $result = $favoritesRepo->addToFavorites($userId, $movieId);
+            $result = $favoritesRepo->addToFavorites($userId, $tmdbId, $movieData);
             
             if ($result) {
                 sendResponse(['message' => 'Movie added to favorites'], 201);
@@ -177,22 +185,22 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'movie_id'])) {
-                sendResponse(null, 400, 'user_id and movie_id are required');
+            if (!validateRequired($input, ['user_id', 'tmdb_id'])) {
+                sendResponse(null, 400, 'user_id and tmdb_id are required');
             }
             
             $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
-            $movieId = filter_var($input['movie_id'], FILTER_VALIDATE_INT);
+            $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
             
             if ($userId === false || $userId <= 0) {
                 sendResponse(null, 400, 'user_id must be a positive integer');
             }
             
-            if ($movieId === false || $movieId <= 0) {
-                sendResponse(null, 400, 'movie_id must be a positive integer');
+            if ($tmdbId === false || $tmdbId <= 0) {
+                sendResponse(null, 400, 'tmdb_id must be a positive integer');
             }
             
-            $result = $favoritesRepo->removeFromFavorites($userId, $movieId);
+            $result = $favoritesRepo->removeFromFavorites($userId, $tmdbId);
             
             if ($result) {
                 sendResponse(['message' => 'Movie removed from favorites'], 200);

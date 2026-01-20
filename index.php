@@ -1,5 +1,21 @@
 <?php
 
+// Load environment variables from .env file
+if (file_exists(__DIR__ . '/.env')) {
+    $envFile = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($envFile as $line) {
+        if (strpos(trim($line), '#') === 0) continue; // Skip comments
+        $parts = explode('=', $line, 2);
+        if (count($parts) === 2) {
+            $key = trim($parts[0]);
+            $value = trim($parts[1]);
+            putenv("$key=$value");
+            $_ENV[$key] = $value;
+            $_SERVER[$key] = $value;
+        }
+    }
+}
+
 // Security headers
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: DENY");
@@ -17,26 +33,26 @@ if (!isset($_SESSION['user_id'])) {
 require_once __DIR__ . '/vendor/autoload.php';
 
 use MovieSuggestor\Database;
-use MovieSuggestor\MovieRepository;
+use MovieSuggestor\TMDBService;
 use MovieSuggestor\FavoritesRepository;
 use MovieSuggestor\WatchLaterRepository;
 use MovieSuggestor\RatingRepository;
 
-// Get filter parameters (Phase 1 - backward compatible)
+// Get filter parameters
 $selectedCategory = $_GET['category'] ?? '';
 $minScore = isset($_GET['min_score']) ? (float)$_GET['min_score'] : 0.0;
-
-// Phase 2 - Advanced filtering parameters
 $categories = isset($_GET['categories']) ? (array)$_GET['categories'] : [];
 $searchText = $_GET['search'] ?? '';
 $yearFrom = isset($_GET['year_from']) ? (int)$_GET['year_from'] : null;
 $yearTo = isset($_GET['year_to']) ? (int)$_GET['year_to'] : null;
+$language = $_GET['language'] ?? '';
+$popular = !empty($_GET['popular']);
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
-$perPage = 12;
+$perPage = 20; // TMDB default per page
 
 // Initialize variables
-$allCategories = [];
-$movies = [];
+$allCategories = ['Δράμα', 'Κωμωδία', 'Δράση', 'Περιπέτεια', 'Ρομαντική', 'Θρίλερ', 'Τρόμου', 'Αστυνομική'];
+$moviesList = [];
 $errorMessage = '';
 $totalMovies = 0;
 $totalPages = 1;
@@ -45,91 +61,100 @@ $userWatchLater = [];
 $userRatings = [];
 
 try {
-    // Initialize database and repositories
+    // Initialize TMDB Service and database repositories
+    $tmdbService = new TMDBService();
     $database = new Database();
-    $movieRepo = new MovieRepository($database);
     $favoritesRepo = new FavoritesRepository($database);
     $watchLaterRepo = new WatchLaterRepository($database->connect());
     $ratingRepo = new RatingRepository($database);
 
-    // Fetch all categories
-    $allCategories = $movieRepo->getAllCategories();
+    // Map Greek categories to TMDB genre IDs
+    $genreMap = [
+        'Δράμα' => 18,
+        'Κωμωδία' => 35,
+        'Δράση' => 28,
+        'Περιπέτεια' => 12,
+        'Ρομαντική' => 10749,
+        'Θρίλερ' => 53,
+        'Τρόμου' => 27,
+        'Αστυνομική' => 80
+    ];
+
+    // Build TMDB filters
+    $filters = ['page' => $page];
     
-    // Use advanced filtering if Phase 2 parameters are present
-    $useAdvancedFiltering = !empty($categories) || !empty($searchText) || $yearFrom || $yearTo;
-    
-    if ($useAdvancedFiltering) {
-        // Phase 2: Advanced filtering with FilterBuilder
-        require_once __DIR__ . '/src/FilterBuilder.php';
-        
-        $builder = new FilterBuilder();
-        
-        if (!empty($categories)) {
-            $builder->withCategories($categories);
-        }
-        if ($minScore > 0) {
-            $builder->withScoreRange($minScore, 10.0);
-        }
-        if ($yearFrom || $yearTo) {
-            $builder->withYearRange($yearFrom, $yearTo);
-        }
-        if (!empty($searchText)) {
-            $builder->withSearchText($searchText);
-        }
-        
-        $builder->withSorting('score', 'DESC');
-        $builder->withPagination($perPage, ($page - 1) * $perPage);
-        
-        $movies = $builder->execute($database->connect());
-        
-        // Get total count for pagination
-        $countBuilder = new FilterBuilder();
-        if (!empty($categories)) {
-            $countBuilder->withCategories($categories);
-        }
-        if ($minScore > 0) {
-            $countBuilder->withScoreRange($minScore, 10.0);
-        }
-        if ($yearFrom || $yearTo) {
-            $countBuilder->withYearRange($yearFrom, $yearTo);
-        }
-        if (!empty($searchText)) {
-            $countBuilder->withSearchText($searchText);
-        }
-        $totalMovies = count($countBuilder->execute($database->connect()));
-        
-    } else {
-        // Phase 1: Basic filtering (backward compatible)
-        $allMoviesResult = $movieRepo->findByFilters($selectedCategory, $minScore);
-        $totalMovies = count($allMoviesResult);
-        
-        // Manual pagination for Phase 1
-        $offset = ($page - 1) * $perPage;
-        $movies = array_slice($allMoviesResult, $offset, $perPage);
+    // Handle categories
+    $activeCategories = !empty($categories) ? $categories : (!empty($selectedCategory) ? [$selectedCategory] : []);
+    if (!empty($activeCategories)) {
+        // Pass Greek category names - TMDBService will convert them to genre IDs
+        $filters['categories'] = $activeCategories;
     }
     
-    $totalPages = max(1, ceil($totalMovies / $perPage));
+    // Minimum score filter
+    if ($minScore > 0) {
+        $filters['vote_average_gte'] = $minScore;
+    }
     
-    // Get user's favorites, watch later, and ratings
+    // Year range filters
+    if ($yearFrom) {
+        $filters['year_from'] = $yearFrom;
+    }
+    if ($yearTo) {
+        $filters['year_to'] = $yearTo;
+    }
+    
+    // Language filter
+    if (!empty($language)) {
+        $filters['with_original_language'] = $language;
+    }
+    
+    // Popularity sort for popular button
+    if ($popular) {
+        $filters['sort_by'] = 'popularity.desc';
+    }
+    
+    // Fetch movies from TMDB
+    if (!empty($searchText)) {
+        $tmdbResponse = $tmdbService->searchMovies($searchText, $page);
+    } else {
+        $tmdbResponse = $tmdbService->discoverMovies($filters);
+    }
+    
+    if (isset($tmdbResponse['success']) && $tmdbResponse['success']) {
+        $totalMovies = $tmdbResponse['total_results'] ?? 0;
+        $totalPages = $tmdbResponse['total_pages'] ?? 1;
+        $moviesList = $tmdbResponse['results'] ?? [];
+        
+        // Filter results client-side if single category selected
+        // TMDB returns movies with multiple genres, we want to show only the primary category
+        if (!empty($selectedCategory) && !empty($moviesList)) {
+            $moviesList = array_filter($moviesList, function($movie) use ($selectedCategory) {
+                return isset($movie['category']) && $movie['category'] === $selectedCategory;
+            });
+            $moviesList = array_values($moviesList); // Re-index array
+        }
+    } else {
+        $errorMessage = $tmdbResponse['error'] ?? 'Failed to load movies from TMDB';
+    }
+    
+    // Get user's favorites, watch later, and ratings (by tmdb_id)
     $userId = $_SESSION['user_id'];
     $userFavoritesData = $favoritesRepo->getFavorites($userId);
-    $userWatchLaterData = $watchLaterRepo->getWatchLater($userId, false); // false = unwatched only
+    $userWatchLaterData = $watchLaterRepo->getWatchLater($userId, false);
     
-    // Convert to lookup arrays for quick checks
+    // Convert to lookup arrays by tmdb_id
     foreach ($userFavoritesData as $fav) {
-        $userFavorites[$fav['id']] = true;
-    }
-    foreach ($userWatchLaterData as $wl) {
-        $userWatchLater[$wl['id']] = true;
-    }
-    
-    // Get user ratings for displayed movies
-    foreach ($movies as $movie) {
-        $rating = $ratingRepo->getUserRating($userId, $movie['id']);
-        if ($rating) {
-            $userRatings[$movie['id']] = $rating['rating'];
+        if (!empty($fav['tmdb_id'])) {
+            $userFavorites[$fav['tmdb_id']] = true;
         }
     }
+    foreach ($userWatchLaterData as $wl) {
+        if (!empty($wl['tmdb_id'])) {
+            $userWatchLater[$wl['tmdb_id']] = true;
+        }
+    }
+    
+    // Note: Ratings will be loaded dynamically as needed
     
 } catch (\Exception $e) {
     // Log error for debugging
@@ -207,6 +232,10 @@ try {
         .trailer-link { display: inline-flex; align-items: center; justify-content: center; background: #ff0000; color: white; padding: 8px 12px; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600; flex: 1; min-width: 80px; transition: all 0.2s; }
         .trailer-link:hover { background: #cc0000; transform: scale(1.05); }
         
+        .trailer-btn { background: #E50914; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; flex: 1; min-width: 100px; }
+        .trailer-btn:hover { background: #b20710; transform: scale(1.05); }
+        .trailer-btn:disabled { background: #ccc; cursor: not-allowed; opacity: 0.6; }
+        
         /* Rating Stars */
         .rating-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0; }
         .rating-display { font-size: 14px; color: #666; margin-bottom: 5px; }
@@ -267,6 +296,8 @@ try {
             </div>
         <?php endif; ?>
         
+        <!-- Main Filters -->
+        <h2 style="margin-bottom: 15px; color: #333;">🎬 Online Movie Search (TMDB)</h2>
         <form method="GET" class="filters" id="filterForm">
             <div class="filter-row">
                 <!-- Phase 2: Multi-select categories -->
@@ -341,53 +372,88 @@ try {
                            value="<?= htmlspecialchars($searchText) ?>"
                            placeholder="Search in title or description...">
                 </div>
+                
+                <div class="filter-group">
+                    <label for="language">Language:</label>
+                    <select name="language" id="language">
+                        <option value="">All Languages</option>
+                        <option value="en">English</option>
+                        <option value="el">Greek (Ελληνικά)</option>
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
+                        <option value="de">German</option>
+                        <option value="it">Italian</option>
+                        <option value="ja">Japanese</option>
+                        <option value="ko">Korean</option>
+                        <option value="zh">Chinese</option>
+                    </select>
+                </div>
             </div>
             
             <div class="filter-row">
                 <div class="button-group" style="flex: 1; justify-content: flex-start;">
                     <button type="submit">🔍 Search Movies</button>
+                    <button type="button" onclick="loadPopularWithFilters()" style="background: #E50914;">🔥 Popular</button>
                     <button type="button" class="secondary" onclick="resetFilters()">↻ Reset Filters</button>
                 </div>
             </div>
         </form>
 
         <div class="movies" id="moviesGrid">
-            <?php if (empty($movies)): ?>
+            <?php if (empty($moviesList)): ?>
                 <div class="no-results" style="grid-column: 1 / -1;">
                     No movies found matching your criteria. Try adjusting your filters!
                 </div>
             <?php else: ?>
-                <?php foreach ($movies as $movie): ?>
-                    <div class="movie-card" data-movie-id="<?= $movie['id'] ?>">
-                        <div class="movie-title"><?= htmlspecialchars($movie['title']) ?></div>
+                <?php foreach ($moviesList as $movie): 
+                    $tmdbId = $movie['tmdb_id'] ?? 0;
+                    $title = $movie['title'] ?? 'Unknown';
+                    $posterUrl = $movie['poster_url'] ?? 'https://via.placeholder.com/500x750?text=No+Poster';
+                    $category = $movie['category'] ?? 'Unknown';
+                    $score = isset($movie['vote_average']) ? number_format($movie['vote_average'], 1) : 'N/A';
+                    $year = $movie['release_year'] ?? '';
+                    $description = $movie['description'] ?? 'No description available';
+                    $imdbRating = $movie['imdb_rating'] ?? null;
+                ?>
+                    <div class="movie-card" data-tmdb-id="<?= $tmdbId ?>" data-title="<?= htmlspecialchars($title) ?>" data-poster="<?= htmlspecialchars($posterUrl) ?>" data-year="<?= $year ?>" data-category="<?= htmlspecialchars($category) ?>">
+                        <?php if (!empty($posterUrl)): ?>
+                        <img src="<?= htmlspecialchars($posterUrl) ?>" 
+                             alt="<?= htmlspecialchars($title) ?>" 
+                             style="width: 100%; height: 200px; object-fit: cover; border-radius: 6px; margin-bottom: 10px;"
+                             onerror="this.src='https://via.placeholder.com/500x750?text=No+Poster'">
+                        <?php endif; ?>
+                        <div class="movie-title"><?= htmlspecialchars($title) ?></div>
+                        <?php if (!empty($movie['original_title']) && $movie['original_title'] !== $title): ?>
+                            <div style="font-size: 13px; color: #999; font-style: italic; margin-bottom: 8px;"><?= htmlspecialchars($movie['original_title']) ?></div>
+                        <?php endif; ?>
                         <div class="movie-meta">
-                            <span class="category"><?= htmlspecialchars($movie['category']) ?></span>
-                            <span class="score">⭐ <?= htmlspecialchars($movie['score']) ?></span>
-                            <?php if (!empty($movie['year'])): ?>
-                                <span class="year"><?= htmlspecialchars($movie['year']) ?></span>
+                            <span class="category"><?= htmlspecialchars($category) ?></span>
+                            <span class="score">⭐ <?= htmlspecialchars($score) ?></span>
+                            <?php if (!empty($imdbRating)): ?>
+                                <span class="score" style="background: #f5c518; color: #000; padding: 4px 8px; border-radius: 4px; font-weight: bold;">IMDb <?= htmlspecialchars($imdbRating) ?></span>
+                            <?php endif; ?>
+                            <?php if (!empty($year)): ?>
+                                <span class="year"><?= htmlspecialchars($year) ?></span>
                             <?php endif; ?>
                         </div>
-                        <div class="description"><?= htmlspecialchars($movie['description']) ?></div>
+                        <div class="description"><?= htmlspecialchars($description) ?></div>
                         
                         <!-- Action Buttons -->
                         <div class="movie-actions">
-                            <button class="action-btn favorite-btn <?= isset($userFavorites[$movie['id']]) ? 'active' : '' ?>" 
-                                    onclick="toggleFavorite(<?= $movie['id'] ?>, this)">
-                                ❤️ <?= isset($userFavorites[$movie['id']]) ? 'Favorited' : 'Favorite' ?>
+                            <button class="action-btn favorite-btn <?= isset($userFavorites[$tmdbId]) ? 'active' : '' ?>" 
+                                    onclick="toggleFavorite(<?= $tmdbId ?>, this)">
+                                ❤️ <?= isset($userFavorites[$tmdbId]) ? 'Favorited' : 'Favorite' ?>
                             </button>
                             
-                            <button class="action-btn watchlater-btn <?= isset($userWatchLater[$movie['id']]) ? 'active' : '' ?>" 
-                                    onclick="toggleWatchLater(<?= $movie['id'] ?>, this)">
-                                📌 <?= isset($userWatchLater[$movie['id']]) ? 'In List' : 'Watch Later' ?>
+                            <button class="action-btn watchlater-btn <?= isset($userWatchLater[$tmdbId]) ? 'active' : '' ?>" 
+                                    onclick="toggleWatchLater(<?= $tmdbId ?>, this)">
+                                📌 <?= isset($userWatchLater[$tmdbId]) ? 'In List' : 'Watch Later' ?>
                             </button>
                             
-                            <?php if (!empty($movie['trailer_url'])): ?>
-                                <a href="<?= htmlspecialchars($movie['trailer_url']) ?>" 
-                                   target="_blank" 
-                                   class="trailer-link">
-                                    ▶️ Trailer
-                                </a>
-                            <?php endif; ?>
+                            <button class="action-btn trailer-btn" 
+                                    onclick="watchTrailer(<?= $tmdbId ?>, this)">
+                                🎬 Trailer
+                            </button>
                         </div>
                         
                         <!-- Rating Section -->
@@ -395,17 +461,13 @@ try {
                             <div class="rating-display">
                                 <small>Rate this movie:</small>
                             </div>
-                            <div class="stars" data-movie-id="<?= $movie['id'] ?>">
+                            <div class="stars" data-tmdb-id="<?= $tmdbId ?>">
                                 <?php 
-                                $userRating = $userRatings[$movie['id']] ?? 0;
+                                // Note: User ratings loaded dynamically
                                 for ($i = 1; $i <= 5; $i++): 
-                                    $isActive = ($i <= ceil($userRating / 2)) ? 'active' : '';
                                 ?>
-                                    <span class="star <?= $isActive ?>" data-rating="<?= $i * 2 ?>" onclick="rateMovie(<?= $movie['id'] ?>, <?= $i * 2 ?>)">★</span>
+                                    <span class="star" data-rating="<?= $i * 2 ?>" onclick="rateMovie(<?= $tmdbId ?>, <?= $i * 2 ?>)">★</span>
                                 <?php endfor; ?>
-                                <?php if ($userRating > 0): ?>
-                                    <span class="user-rating-text">Your rating: <?= number_format($userRating, 1) ?>/10</span>
-                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -455,19 +517,27 @@ try {
         }
         
         // Toggle Favorite
-        async function toggleFavorite(movieId, button) {
+        async function toggleFavorite(tmdbId, button) {
             const isActive = button.classList.contains('active');
             const action = isActive ? 'remove' : 'add';
             
+            // Get movie data from card
+            const card = button.closest('.movie-card');
+            const movieData = {
+                tmdb_id: tmdbId,
+                title: card.dataset.title,
+                poster_url: card.dataset.poster,
+                release_year: card.dataset.year,
+                category: card.dataset.category
+            };
+            
             try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
+                const response = await fetch('api/favorites.php', {
+                    method: isActive ? 'DELETE' : 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'favorite',
-                        operation: action,
                         user_id: USER_ID,
-                        movie_id: movieId
+                        ...movieData
                     })
                 });
                 
@@ -478,7 +548,7 @@ try {
                     button.textContent = isActive ? '❤️ Favorite' : '❤️ Favorited';
                     showMessage(isActive ? 'Removed from favorites' : 'Added to favorites!');
                 } else {
-                    alert('Error: ' + (data.message || 'Failed to update favorite'));
+                    alert('Error: ' + (data.error || 'Failed to update favorite'));
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -487,19 +557,27 @@ try {
         }
         
         // Toggle Watch Later
-        async function toggleWatchLater(movieId, button) {
+        async function toggleWatchLater(tmdbId, button) {
             const isActive = button.classList.contains('active');
             const action = isActive ? 'remove' : 'add';
             
+            // Get movie data from card
+            const card = button.closest('.movie-card');
+            const movieData = {
+                tmdb_id: tmdbId,
+                title: card.dataset.title,
+                poster_url: card.dataset.poster,
+                release_year: card.dataset.year,
+                category: card.dataset.category
+            };
+            
             try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
+                const response = await fetch('api/watch-later.php', {
+                    method: isActive ? 'DELETE' : 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'watchlater',
-                        operation: action,
                         user_id: USER_ID,
-                        movie_id: movieId
+                        ...movieData
                     })
                 });
                 
@@ -510,7 +588,7 @@ try {
                     button.textContent = isActive ? '📌 Watch Later' : '📌 In List';
                     showMessage(isActive ? 'Removed from watch later' : 'Added to watch later!');
                 } else {
-                    alert('Error: ' + (data.message || 'Failed to update watch later'));
+                    alert('Error: ' + (data.error || 'Failed to update watch later'));
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -519,16 +597,25 @@ try {
         }
         
         // Rate Movie
-        async function rateMovie(movieId, rating) {
+        async function rateMovie(tmdbId, rating) {
+            // Get movie data from card
+            const card = document.querySelector(`.movie-card[data-tmdb-id="${tmdbId}"]`);
+            const movieData = {
+                tmdb_id: tmdbId,
+                title: card.dataset.title,
+                poster_url: card.dataset.poster,
+                release_year: card.dataset.year,
+                category: card.dataset.category
+            };
+            
             try {
-                const response = await fetch(API_URL, {
+                const response = await fetch('api/ratings.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'rate',
                         user_id: USER_ID,
-                        movie_id: movieId,
-                        rating: rating
+                        rating: rating,
+                        ...movieData
                     })
                 });
                 
@@ -536,7 +623,7 @@ try {
                 
                 if (data.success) {
                     // Update stars display
-                    const starsContainer = document.querySelector(`.stars[data-movie-id="${movieId}"]`);
+                    const starsContainer = document.querySelector(`.stars[data-tmdb-id="${tmdbId}"]`);
                     const stars = starsContainer.querySelectorAll('.star');
                     const maxActive = Math.ceil(rating / 2);
                     
@@ -559,7 +646,7 @@ try {
                     
                     showMessage(`Rated ${rating}/10!`);
                 } else {
-                    alert('Error: ' + (data.message || 'Failed to submit rating'));
+                    alert('Error: ' + (data.error || 'Failed to submit rating'));
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -580,6 +667,24 @@ try {
             window.location.href = window.location.pathname;
         }
         
+        // Load popular movies with current filters
+        function loadPopularWithFilters() {
+            const form = document.getElementById('filterForm');
+            const formData = new FormData(form);
+            
+            // Build URL with current filters
+            const params = new URLSearchParams();
+            for (let [key, value] of formData.entries()) {
+                if (value) params.append(key, value);
+            }
+            
+            // Add popular flag
+            params.append('popular', '1');
+            
+            // Navigate to filtered popular movies
+            window.location.href = '?' + params.toString();
+        }
+        
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Ctrl/Cmd + K to focus search
@@ -588,6 +693,247 @@ try {
                 document.getElementById('search').focus();
             }
         });
+
+        // =====================================================
+        // TMDB SEARCH FUNCTIONALITY
+        // =====================================================
+        
+        let currentTMDBPage = 1;
+        let currentTMDBQuery = '';
+        let currentTMDBMode = 'search'; // 'search' or 'popular'
+
+        // Search TMDB
+        async function searchTMDB(page = 1) {
+            const query = document.getElementById('tmdb-query').value.trim();
+            
+            if (!query && page === 1) {
+                alert('Please enter a movie title to search');
+                return;
+            }
+            
+            currentTMDBPage = page;
+            currentTMDBQuery = query;
+            currentTMDBMode = 'search';
+            
+            showTMDBLoading();
+            
+            try {
+                const response = await fetch(`api/tmdb-search.php?query=${encodeURIComponent(query)}&page=${page}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayTMDBResults(data);
+                } else {
+                    showTMDBError(data.error || 'Search failed');
+                }
+            } catch (error) {
+                console.error('TMDB Search Error:', error);
+                showTMDBError('Network error. Please check your connection.');
+            }
+        }
+
+        // Get Popular Movies
+        async function getPopularMovies(page = 1) {
+            currentTMDBPage = page;
+            currentTMDBMode = 'popular';
+            
+            showTMDBLoading();
+            
+            try {
+                const response = await fetch(`api/tmdb-search.php?popular=1&page=${page}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayTMDBResults(data);
+                } else {
+                    showTMDBError(data.error || 'Failed to load popular movies');
+                }
+            } catch (error) {
+                console.error('TMDB Popular Error:', error);
+                showTMDBError('Network error. Please check your connection.');
+            }
+        }
+
+        // Display TMDB Results
+        function displayTMDBResults(data) {
+            const resultsDiv = document.getElementById('tmdb-results');
+            const gridDiv = document.getElementById('tmdb-movies-grid');
+            const paginationDiv = document.getElementById('tmdb-pagination');
+            
+            hideTMDBLoading();
+            hideTMDBError();
+            
+            if (!data.results || data.results.length === 0) {
+                gridDiv.innerHTML = '<div class="no-results" style="grid-column: 1 / -1; color: white;">No movies found</div>';
+                resultsDiv.style.display = 'block';
+                return;
+            }
+            
+            // Build movie cards
+            let html = '';
+            data.results.forEach(movie => {
+                const posterUrl = movie.poster_url || 'https://via.placeholder.com/500x750?text=No+Poster';
+                const year = movie.release_year || 'N/A';
+                const rating = movie.vote_average || 'N/A';
+                const description = movie.description ? (movie.description.substring(0, 150) + '...') : 'No description available';
+                const imdbRating = movie.imdb_rating ? `<span class="score" style="background: #f5c518; color: #000; padding: 4px 8px; border-radius: 4px; font-weight: bold; margin-left: 5px;">IMDb ${movie.imdb_rating}</span>` : '';
+                
+                html += `
+                    <div class="movie-card" style="background: white;">
+                        <img src="${posterUrl}" 
+                             alt="${escapeHtml(movie.title)}" 
+                             style="width: 100%; height: 200px; object-fit: cover; border-radius: 6px; margin-bottom: 10px;"
+                             onerror="this.src='https://via.placeholder.com/500x750?text=No+Poster'">
+                        <div class="movie-title">${escapeHtml(movie.title)}</div>
+                        <div class="movie-meta">
+                            <span class="category">${escapeHtml(movie.category)}</span>
+                            <span class="score">⭐ ${rating}</span>
+                            ${imdbRating}
+                            <span class="year">${year}</span>
+                        </div>
+                        <div class="description">${escapeHtml(description)}</div>
+                        <div class="movie-actions">
+                            <button class="action-btn" 
+                                    style="background: #28a745; color: white; flex: 1;"
+                                    onclick="importMovie(${movie.tmdb_id}, this)">
+                                💾 Import to Database
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            gridDiv.innerHTML = html;
+            
+            // Build pagination
+            let paginationHtml = '';
+            if (data.total_pages > 1) {
+                paginationHtml += `<button onclick="goToTMDBPage(${data.page - 1})" ${data.page === 1 ? 'disabled' : ''}>◀ Previous</button>`;
+                paginationHtml += `<span>Page ${data.page} of ${Math.min(data.total_pages, 500)}</span>`;
+                paginationHtml += `<button onclick="goToTMDBPage(${data.page + 1})" ${data.page >= data.total_pages ? 'disabled' : ''}>Next ▶</button>`;
+            }
+            paginationDiv.innerHTML = paginationHtml;
+            
+            resultsDiv.style.display = 'block';
+        }
+
+        // Import Movie to Database
+        async function importMovie(tmdbId, button) {
+            const originalText = button.innerHTML;
+            button.innerHTML = '⏳ Importing...';
+            button.disabled = true;
+            
+            try {
+                const response = await fetch('api/import-movie.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tmdb_id: tmdbId })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    button.innerHTML = '✓ Imported!';
+                    button.style.background = '#666';
+                    showMessage(`"${data.movie.title}" imported successfully!`);
+                    
+                    // Optionally reload local movies
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    
+                    if (data.error.includes('already exists')) {
+                        showMessage('Movie already in database', 'warning');
+                    } else {
+                        alert('Import failed: ' + data.error);
+                    }
+                }
+            } catch (error) {
+                console.error('Import Error:', error);
+                button.innerHTML = originalText;
+                button.disabled = false;
+                alert('Network error. Please try again.');
+            }
+        }
+
+        // Go to TMDB Page
+        function goToTMDBPage(page) {
+            if (currentTMDBMode === 'popular') {
+                getPopularMovies(page);
+            } else {
+                searchTMDB(page);
+            }
+        }
+
+        // Show TMDB Loading
+        function showTMDBLoading() {
+            document.getElementById('tmdb-loading').style.display = 'block';
+            document.getElementById('tmdb-results').style.display = 'none';
+            document.getElementById('tmdb-error').style.display = 'none';
+        }
+
+        // Hide TMDB Loading
+        function hideTMDBLoading() {
+            document.getElementById('tmdb-loading').style.display = 'none';
+        }
+
+        // Show TMDB Error
+        function showTMDBError(message) {
+            const errorDiv = document.getElementById('tmdb-error');
+            const errorMsg = document.getElementById('tmdb-error-message');
+            errorMsg.textContent = message;
+            errorDiv.style.display = 'block';
+            hideTMDBLoading();
+        }
+
+        // Hide TMDB Error
+        function hideTMDBError() {
+            document.getElementById('tmdb-error').style.display = 'none';
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Allow Enter key to search TMDB
+        document.getElementById('tmdb-query').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchTMDB();
+            }
+        });
+        
+        // Watch Trailer Function
+        async function watchTrailer(tmdbId, button) {
+            const originalText = button.innerHTML;
+            button.innerHTML = '⏳ Loading...';
+            button.disabled = true;
+            
+            try {
+                const response = await fetch(`api/tmdb-search.php?trailer=${tmdbId}`);
+                const data = await response.json();
+                
+                if (data.success && data.trailer_url) {
+                    window.open(data.trailer_url, '_blank');
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                } else {
+                    alert('Trailer not available for this movie');
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }
+            } catch (error) {
+                console.error('Trailer Error:', error);
+                alert('Failed to load trailer');
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }
+        }
     </script>
 </body>
 </html>

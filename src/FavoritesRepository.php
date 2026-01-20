@@ -8,9 +8,9 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Repository for managing user favorites
+ * Repository for managing user favorites (TMDB-based)
  * 
- * Provides functionality to add, remove, and query favorite movies for users.
+ * Stores TMDB movie IDs with snapshot data (title, poster, year, category)
  * All methods use prepared statements for security and include proper error handling.
  * 
  * @package MovieSuggestor
@@ -30,33 +30,41 @@ class FavoritesRepository
     }
 
     /**
-     * Add a movie to user's favorites
-     * 
-     * Prevents duplicate entries by using INSERT IGNORE.
-     * Validates that both user ID and movie ID are positive integers.
+     * Add a movie to user's favorites with TMDB ID and snapshot data
      * 
      * @param int $userId User ID
-     * @param int $movieId Movie ID
-     * @return bool True if added successfully or already exists, false on failure
-     * @throws InvalidArgumentException If user ID or movie ID is invalid
+     * @param int $tmdbId TMDB Movie ID
+     * @param array $movieData Movie snapshot data (title, poster_url, release_year, category)
+     * @return bool True if added successfully
+     * @throws InvalidArgumentException If validation fails
+     * @throws RuntimeException If database operation fails
      */
-    public function addToFavorites(int $userId, int $movieId): bool
+    public function addToFavorites(int $userId, int $tmdbId, array $movieData = []): bool
     {
-        // Validate input
         if ($userId <= 0) {
             throw new InvalidArgumentException("User ID must be a positive integer");
         }
-        if ($movieId <= 0) {
-            throw new InvalidArgumentException("Movie ID must be a positive integer");
+        if ($tmdbId <= 0) {
+            throw new InvalidArgumentException("TMDB ID must be a positive integer");
         }
 
         try {
-            $sql = "INSERT IGNORE INTO favorites (user_id, movie_id, created_at) 
-                    VALUES (:user_id, :movie_id, NOW())";
+            $sql = "INSERT INTO favorites 
+                    (user_id, tmdb_id, movie_title, poster_url, release_year, category, created_at) 
+                    VALUES (:user_id, :tmdb_id, :title, :poster_url, :year, :category, NOW())
+                    ON DUPLICATE KEY UPDATE 
+                        movie_title = VALUES(movie_title),
+                        poster_url = VALUES(poster_url),
+                        release_year = VALUES(release_year),
+                        category = VALUES(category)";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
-            $stmt->bindParam(':movie_id', $movieId, PDO::PARAM_INT);
+            $stmt->bindParam(':tmdb_id', $tmdbId, PDO::PARAM_INT);
+            $stmt->bindValue(':title', $movieData['title'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':poster_url', $movieData['poster_url'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':year', $movieData['release_year'] ?? null, PDO::PARAM_INT);
+            $stmt->bindValue(':category', $movieData['category'] ?? null, PDO::PARAM_STR);
             
             return $stmt->execute();
         } catch (PDOException $e) {
@@ -66,33 +74,30 @@ class FavoritesRepository
     }
 
     /**
-     * Remove a movie from user's favorites
-     * 
-     * Validates that both user ID and movie ID are positive integers.
-     * Returns true even if the favorite didn't exist.
+     * Remove a movie from user's favorites by TMDB ID
      * 
      * @param int $userId User ID
-     * @param int $movieId Movie ID
-     * @return bool True if removed successfully or didn't exist, false on failure
-     * @throws InvalidArgumentException If user ID or movie ID is invalid
+     * @param int $tmdbId TMDB Movie ID
+     * @return bool True if removed successfully
+     * @throws InvalidArgumentException If validation fails
+     * @throws RuntimeException If database operation fails
      */
-    public function removeFromFavorites(int $userId, int $movieId): bool
+    public function removeFromFavorites(int $userId, int $tmdbId): bool
     {
-        // Validate input
         if ($userId <= 0) {
             throw new InvalidArgumentException("User ID must be a positive integer");
         }
-        if ($movieId <= 0) {
-            throw new InvalidArgumentException("Movie ID must be a positive integer");
+        if ($tmdbId <= 0) {
+            throw new InvalidArgumentException("TMDB ID must be a positive integer");
         }
 
         try {
             $sql = "DELETE FROM favorites 
-                    WHERE user_id = :user_id AND movie_id = :movie_id";
+                    WHERE user_id = :user_id AND tmdb_id = :tmdb_id";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
-            $stmt->bindParam(':movie_id', $movieId, PDO::PARAM_INT);
+            $stmt->bindParam(':tmdb_id', $tmdbId, PDO::PARAM_INT);
             
             return $stmt->execute();
         } catch (PDOException $e) {
@@ -102,31 +107,26 @@ class FavoritesRepository
     }
 
     /**
-     * Get all favorite movies for a user
-     * 
-     * Returns movies with all their metadata, ordered by when they were favorited (newest first).
+     * Get all favorite movies for a user (returns snapshot data)
      * 
      * @param int $userId User ID
-     * @return array Array of movie objects with all fields
+     * @return array Array of favorite movies with snapshot data
      * @throws InvalidArgumentException If user ID is invalid
+     * @throws RuntimeException If database operation fails
      */
     public function getFavorites(int $userId): array
     {
-        // Validate input
         if ($userId <= 0) {
             throw new InvalidArgumentException("User ID must be a positive integer");
         }
 
         try {
-            $sql = "SELECT m.id, m.title, m.category, m.score, m.trailer_url, 
-                           m.description, m.release_year, m.runtime_minutes, m.director, 
-                           m.actors, m.poster_url, m.backdrop_url, m.imdb_rating, 
-                           m.user_rating, m.votes_count, m.created_at, m.updated_at,
-                           f.created_at as favorited_at
-                    FROM movies m
-                    INNER JOIN favorites f ON m.id = f.movie_id
-                    WHERE f.user_id = :user_id
-                    ORDER BY f.created_at DESC";
+            $sql = "SELECT tmdb_id as id, tmdb_id, movie_title as title, 
+                           poster_url, release_year as year, category, 
+                           created_at as favorited_at
+                    FROM favorites
+                    WHERE user_id = :user_id
+                    ORDER BY created_at DESC";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
@@ -140,31 +140,31 @@ class FavoritesRepository
     }
 
     /**
-     * Check if a movie is in user's favorites
+     * Check if a movie is in user's favorites by TMDB ID
      * 
      * @param int $userId User ID
-     * @param int $movieId Movie ID
-     * @return bool True if the movie is in user's favorites, false otherwise
-     * @throws InvalidArgumentException If user ID or movie ID is invalid
+     * @param int $tmdbId TMDB Movie ID
+     * @return bool True if the movie is in favorites
+     * @throws InvalidArgumentException If validation fails
+     * @throws RuntimeException If database operation fails
      */
-    public function isFavorite(int $userId, int $movieId): bool
+    public function isFavorite(int $userId, int $tmdbId): bool
     {
-        // Validate input
         if ($userId <= 0) {
             throw new InvalidArgumentException("User ID must be a positive integer");
         }
-        if ($movieId <= 0) {
-            throw new InvalidArgumentException("Movie ID must be a positive integer");
+        if ($tmdbId <= 0) {
+            throw new InvalidArgumentException("TMDB ID must be a positive integer");
         }
 
         try {
             $sql = "SELECT COUNT(*) as count 
                     FROM favorites 
-                    WHERE user_id = :user_id AND movie_id = :movie_id";
+                    WHERE user_id = :user_id AND tmdb_id = :tmdb_id";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
-            $stmt->bindParam(':movie_id', $movieId, PDO::PARAM_INT);
+            $stmt->bindParam(':tmdb_id', $tmdbId, PDO::PARAM_INT);
             $stmt->execute();
             
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -176,23 +176,49 @@ class FavoritesRepository
     }
 
     /**
-     * Get count of favorites for a user
+     * Get array of TMDB IDs for user's favorites (for quick lookups)
      * 
      * @param int $userId User ID
-     * @return int Number of favorites for the user
+     * @return array Array of TMDB IDs
      * @throws InvalidArgumentException If user ID is invalid
+     * @throws RuntimeException If database operation fails
      */
-    public function getFavoritesCount(int $userId): int
+    public function getFavoriteTmdbIds(int $userId): array
     {
-        // Validate input
         if ($userId <= 0) {
             throw new InvalidArgumentException("User ID must be a positive integer");
         }
 
         try {
-            $sql = "SELECT COUNT(*) as count 
-                    FROM favorites 
-                    WHERE user_id = :user_id";
+            $sql = "SELECT tmdb_id FROM favorites WHERE user_id = :user_id";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'tmdb_id');
+        } catch (PDOException $e) {
+            error_log("Error getting favorite TMDB IDs: " . $e->getMessage());
+            throw new RuntimeException("Failed to retrieve favorite TMDB IDs");
+        }
+    }
+
+    /**
+     * Get count of favorites for a user
+     * 
+     * @param int $userId User ID
+     * @return int Number of favorites
+     * @throws InvalidArgumentException If user ID is invalid
+     * @throws RuntimeException If database operation fails
+     */
+    public function getFavoritesCount(int $userId): int
+    {
+        if ($userId <= 0) {
+            throw new InvalidArgumentException("User ID must be a positive integer");
+        }
+
+        try {
+            $sql = "SELECT COUNT(*) as count FROM favorites WHERE user_id = :user_id";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);

@@ -5,24 +5,18 @@ namespace MovieSuggestor;
 use PDO;
 use PDOException;
 use InvalidArgumentException;
+use RuntimeException;
 
 /**
- * Repository for managing watch later list
+ * Repository for managing watch later list (TMDB-based)
  * 
- * This class provides functionality to:
- * - Add movies to watch later list
- * - Remove movies from watch later list
- * - Mark movies as watched
- * - Retrieve watch later lists (watched and unwatched)
- * - Check if a movie is in the watch later list
+ * Stores TMDB movie IDs with snapshot data (title, poster, year, category)
+ * All methods use prepared statements for security and include proper error handling.
  * 
  * @package MovieSuggestor
  */
 class WatchLaterRepository
 {
-    /**
-     * @var PDO Database connection
-     */
     private PDO $db;
 
     /**
@@ -36,37 +30,46 @@ class WatchLaterRepository
     }
 
     /**
-     * Add a movie to watch later list
+     * Add a movie to watch later list with TMDB ID and snapshot data
      * 
      * @param int $userId User ID
-     * @param int $movieId Movie ID
+     * @param int $tmdbId TMDB Movie ID
+     * @param array $movieData Movie snapshot data
      * @return bool Success status
-     * @throws InvalidArgumentException If user ID or movie ID is invalid
+     * @throws InvalidArgumentException If user ID or TMDB ID is invalid
      */
-    public function addToWatchLater(int $userId, int $movieId): bool
+    public function addToWatchLater(int $userId, int $tmdbId, array $movieData = []): bool
     {
-        // Validate input
         if ($userId <= 0) {
             throw new InvalidArgumentException('User ID must be a positive integer');
         }
-        if ($movieId <= 0) {
-            throw new InvalidArgumentException('Movie ID must be a positive integer');
+        if ($tmdbId <= 0) {
+            throw new InvalidArgumentException('TMDB ID must be a positive integer');
         }
 
         try {
-            $stmt = $this->db->prepare(
-                'INSERT INTO watch_later (user_id, movie_id, added_at) 
-                 VALUES (:user_id, :movie_id, NOW())
-                 ON DUPLICATE KEY UPDATE added_at = NOW()'
-            );
+            $sql = "INSERT INTO watch_later 
+                    (user_id, tmdb_id, movie_title, poster_url, release_year, category, added_at) 
+                    VALUES (:user_id, :tmdb_id, :title, :poster_url, :year, :category, NOW())
+                    ON DUPLICATE KEY UPDATE 
+                        movie_title = VALUES(movie_title),
+                        poster_url = VALUES(poster_url),
+                        release_year = VALUES(release_year),
+                        category = VALUES(category),
+                        added_at = NOW()";
             
+            $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
-            $stmt->bindParam(':movie_id', $movieId, PDO::PARAM_INT);
+            $stmt->bindParam(':tmdb_id', $tmdbId, PDO::PARAM_INT);
+            $stmt->bindValue(':title', $movieData['title'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':poster_url', $movieData['poster_url'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':year', $movieData['release_year'] ?? null, PDO::PARAM_INT);
+            $stmt->bindValue(':category', $movieData['category'] ?? null, PDO::PARAM_STR);
             
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log("Error adding to watch later: " . $e->getMessage());
-            return false;
+            throw new RuntimeException('Failed to add to watch later');
         }
     }
 
@@ -74,63 +77,59 @@ class WatchLaterRepository
      * Remove a movie from watch later list
      * 
      * @param int $userId User ID
-     * @param int $movieId Movie ID
+     * @param int $tmdbId TMDB Movie ID
      * @return bool Success status
-     * @throws InvalidArgumentException If user ID or movie ID is invalid
+     * @throws InvalidArgumentException If user ID or TMDB ID is invalid
      */
-    public function removeFromWatchLater(int $userId, int $movieId): bool
+    public function removeFromWatchLater(int $userId, int $tmdbId): bool
     {
-        // Validate input
         if ($userId <= 0) {
             throw new InvalidArgumentException('User ID must be a positive integer');
         }
-        if ($movieId <= 0) {
-            throw new InvalidArgumentException('Movie ID must be a positive integer');
+        if ($tmdbId <= 0) {
+            throw new InvalidArgumentException('TMDB ID must be a positive integer');
         }
 
         try {
             $stmt = $this->db->prepare(
                 'DELETE FROM watch_later 
-                 WHERE user_id = :user_id AND movie_id = :movie_id'
+                 WHERE user_id = :user_id AND tmdb_id = :tmdb_id'
             );
             
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
-            $stmt->bindParam(':movie_id', $movieId, PDO::PARAM_INT);
+            $stmt->bindParam(':tmdb_id', $tmdbId, PDO::PARAM_INT);
             
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log("Error removing from watch later: " . $e->getMessage());
-            return false;
+            throw new RuntimeException('Failed to remove from watch later');
         }
     }
 
     /**
      * Get all movies from watch later list for a user
      * 
-     * Returns only unwatched movies by default. Set $includeWatched to true
-     * to get all movies including watched ones.
-     * 
      * @param int $userId User ID
-     * @param bool $includeWatched Whether to include watched movies (default: false)
-     * @return array Array of movie objects with watch later metadata
+     * @param bool $includeWatched Whether to include watched movies
+     * @return array Array of movies with snapshot data
      * @throws InvalidArgumentException If user ID is invalid
      */
     public function getWatchLater(int $userId, bool $includeWatched = false): array
     {
-        // Validate input
         if ($userId <= 0) {
             throw new InvalidArgumentException('User ID must be a positive integer');
         }
 
         try {
-            $watchedFilter = $includeWatched ? '' : 'AND w.watched = FALSE';
+            $watchedFilter = $includeWatched ? '' : 'AND watched = FALSE';
             
             $stmt = $this->db->prepare(
-                "SELECT m.*, w.added_at, w.watched, w.watched_at
-                 FROM movies m
-                 INNER JOIN watch_later w ON m.id = w.movie_id
-                 WHERE w.user_id = :user_id {$watchedFilter}
-                 ORDER BY w.added_at DESC"
+                "SELECT tmdb_id as id, tmdb_id, movie_title as title, 
+                       poster_url, release_year as year, category,
+                       added_at, watched, watched_at
+                 FROM watch_later
+                 WHERE user_id = :user_id {$watchedFilter}
+                 ORDER BY added_at DESC"
             );
             
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
@@ -139,7 +138,7 @@ class WatchLaterRepository
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
             error_log("Error fetching watch later list: " . $e->getMessage());
-            return [];
+            throw new RuntimeException('Failed to retrieve watch later list');
         }
     }
 

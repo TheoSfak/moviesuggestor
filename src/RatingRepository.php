@@ -31,45 +31,55 @@ class RatingRepository
     }
 
     /**
-     * Add a new rating for a movie
+     * Add a new rating for a movie with TMDB ID
      * 
      * Creates a new rating record. If the user has already rated this movie,
-     * use updateRating() instead or this will throw an exception due to unique constraint.
+     * this will update the existing rating.
      * 
      * @param int $userId User ID
-     * @param int $movieId Movie ID
+     * @param int $tmdbId TMDB Movie ID
      * @param float $rating Rating value (1-10)
+     * @param array $movieData Movie snapshot data (title, poster_url, release_year, category)
      * @param string|null $review Optional review text
      * @return bool True if rating was added successfully
      * @throws InvalidArgumentException If validation fails
      * @throws RuntimeException If database operation fails
      */
-    public function addRating(int $userId, int $movieId, float $rating, ?string $review = null): bool
+    public function addRating(int $userId, int $tmdbId, float $rating, array $movieData = [], ?string $review = null): bool
     {
         // Validate input
         $this->validateUserId($userId);
-        $this->validateMovieId($movieId);
+        if ($tmdbId <= 0) {
+            throw new InvalidArgumentException("TMDB ID must be a positive integer");
+        }
         $this->validateRating($rating);
 
         try {
-            $sql = "INSERT INTO ratings (user_id, movie_id, rating, review, created_at) 
-                    VALUES (:user_id, :movie_id, :rating, :review, NOW())";
+            $sql = "INSERT INTO ratings 
+                    (user_id, movie_id, tmdb_id, rating, review, movie_title, poster_url, release_year, category, created_at) 
+                    VALUES (:user_id, 0, :tmdb_id, :rating, :review, :title, :poster_url, :year, :category, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        rating = VALUES(rating),
+                        review = VALUES(review),
+                        movie_title = VALUES(movie_title),
+                        poster_url = VALUES(poster_url),
+                        release_year = VALUES(release_year),
+                        category = VALUES(category),
+                        updated_at = NOW()";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
-            $stmt->bindParam(':movie_id', $movieId, PDO::PARAM_INT);
+            $stmt->bindParam(':tmdb_id', $tmdbId, PDO::PARAM_INT);
             $stmt->bindParam(':rating', $rating);
             $stmt->bindParam(':review', $review, PDO::PARAM_STR);
+            $stmt->bindValue(':title', $movieData['title'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':poster_url', $movieData['poster_url'] ?? null, PDO::PARAM_STR);
+            $stmt->bindValue(':year', $movieData['release_year'] ?? null, PDO::PARAM_INT);
+            $stmt->bindValue(':category', $movieData['category'] ?? null, PDO::PARAM_STR);
             
             return $stmt->execute();
         } catch (PDOException $e) {
             error_log("Error adding rating: " . $e->getMessage());
-            
-            // Check for duplicate entry error
-            if ($e->getCode() == 23000) {
-                throw new RuntimeException("User has already rated this movie. Use updateRating() instead.");
-            }
-            
             throw new RuntimeException("Failed to add rating");
         }
     }
@@ -161,29 +171,31 @@ class RatingRepository
     }
 
     /**
-     * Get a user's rating for a specific movie
+     * Get a user's rating for a specific movie by TMDB ID
      * 
      * Returns the complete rating record including review and timestamps.
      * 
      * @param int $userId User ID
-     * @param int $movieId Movie ID
+     * @param int $tmdbId TMDB Movie ID
      * @return array|null Rating data or null if not found
      * @throws InvalidArgumentException If validation fails
      */
-    public function getUserRating(int $userId, int $movieId): ?array
+    public function getUserRating(int $userId, int $tmdbId): ?array
     {
         // Validate input
         $this->validateUserId($userId);
-        $this->validateMovieId($movieId);
+        if ($tmdbId <= 0) {
+            throw new InvalidArgumentException("TMDB ID must be a positive integer");
+        }
 
         try {
-            $sql = "SELECT id, user_id, movie_id, rating, review, created_at, updated_at 
+            $sql = "SELECT id, user_id, movie_id, tmdb_id, rating, review, created_at, updated_at 
                     FROM ratings 
-                    WHERE user_id = :user_id AND movie_id = :movie_id";
+                    WHERE user_id = :user_id AND tmdb_id = :tmdb_id";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
-            $stmt->bindParam(':movie_id', $movieId, PDO::PARAM_INT);
+            $stmt->bindParam(':tmdb_id', $tmdbId, PDO::PARAM_INT);
             $stmt->execute();
             
             $result = $stmt->fetch(PDO::FETCH_ASSOC);

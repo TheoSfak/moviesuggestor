@@ -144,28 +144,36 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'movie_id'])) {
-                sendResponse(null, 400, 'user_id and movie_id are required');
+            if (!validateRequired($input, ['user_id', 'tmdb_id'])) {
+                sendResponse(null, 400, 'user_id and tmdb_id are required');
             }
             
             $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
-            $movieId = filter_var($input['movie_id'], FILTER_VALIDATE_INT);
+            $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
             
             if ($userId === false || $userId <= 0) {
                 sendResponse(null, 400, 'user_id must be a positive integer');
             }
             
-            if ($movieId === false || $movieId <= 0) {
-                sendResponse(null, 400, 'movie_id must be a positive integer');
+            if ($tmdbId === false || $tmdbId <= 0) {
+                sendResponse(null, 400, 'tmdb_id must be a positive integer');
             }
             
+            // Extract movie snapshot data
+            $movieData = [
+                'title' => $input['title'] ?? null,
+                'poster_url' => $input['poster_url'] ?? null,
+                'release_year' => isset($input['release_year']) ? filter_var($input['release_year'], FILTER_VALIDATE_INT) : null,
+                'category' => $input['category'] ?? null
+            ];
+            
             // Check if already in watch later
-            $isInList = $watchLaterRepo->isInWatchLater($userId, $movieId);
+            $isInList = $watchLaterRepo->isInWatchLater($userId, $tmdbId);
             if ($isInList) {
                 sendResponse(['message' => 'Movie is already in watch later list'], 200);
             }
             
-            $result = $watchLaterRepo->addToWatchLater($userId, $movieId);
+            $result = $watchLaterRepo->addToWatchLater($userId, $tmdbId, $movieData);
             
             if ($result) {
                 sendResponse(['message' => 'Movie added to watch later'], 201);
@@ -182,22 +190,22 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'movie_id'])) {
-                sendResponse(null, 400, 'user_id and movie_id are required');
+            if (!validateRequired($input, ['user_id', 'tmdb_id'])) {
+                sendResponse(null, 400, 'user_id and tmdb_id are required');
             }
             
             $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
-            $movieId = filter_var($input['movie_id'], FILTER_VALIDATE_INT);
+            $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
             
             if ($userId === false || $userId <= 0) {
                 sendResponse(null, 400, 'user_id must be a positive integer');
             }
             
-            if ($movieId === false || $movieId <= 0) {
-                sendResponse(null, 400, 'movie_id must be a positive integer');
+            if ($tmdbId === false || $tmdbId <= 0) {
+                sendResponse(null, 400, 'tmdb_id must be a positive integer');
             }
             
-            $result = $watchLaterRepo->removeFromWatchLater($userId, $movieId);
+            $result = $watchLaterRepo->removeFromWatchLater($userId, $tmdbId);
             
             if ($result) {
                 sendResponse(['message' => 'Movie removed from watch later'], 200);
@@ -214,22 +222,22 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'movie_id'])) {
-                sendResponse(null, 400, 'user_id and movie_id are required');
+            if (!validateRequired($input, ['user_id', 'tmdb_id'])) {
+                sendResponse(null, 400, 'user_id and tmdb_id are required');
             }
             
             $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
-            $movieId = filter_var($input['movie_id'], FILTER_VALIDATE_INT);
+            $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
             
             if ($userId === false || $userId <= 0) {
                 sendResponse(null, 400, 'user_id must be a positive integer');
             }
             
-            if ($movieId === false || $movieId <= 0) {
-                sendResponse(null, 400, 'movie_id must be a positive integer');
+            if ($tmdbId === false || $tmdbId <= 0) {
+                sendResponse(null, 400, 'tmdb_id must be a positive integer');
             }
             
-            $result = $watchLaterRepo->markAsWatched($userId, $movieId);
+            $result = $watchLaterRepo->markAsWatched($userId, $tmdbId);
             
             if ($result) {
                 sendResponse(['message' => 'Movie marked as watched'], 200);

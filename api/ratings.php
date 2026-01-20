@@ -172,12 +172,12 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'movie_id', 'rating'])) {
-                sendResponse(null, 400, 'user_id, movie_id, and rating are required');
+            if (!validateRequired($input, ['user_id', 'tmdb_id', 'rating'])) {
+                sendResponse(null, 400, 'user_id, tmdb_id, and rating are required');
             }
             
             $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
-            $movieId = filter_var($input['movie_id'], FILTER_VALIDATE_INT);
+            $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
             $rating = filter_var($input['rating'], FILTER_VALIDATE_FLOAT);
             $review = isset($input['review']) ? trim($input['review']) : null;
             
@@ -185,8 +185,8 @@ try {
                 sendResponse(null, 400, 'user_id must be a positive integer');
             }
             
-            if ($movieId === false || $movieId <= 0) {
-                sendResponse(null, 400, 'movie_id must be a positive integer');
+            if ($tmdbId === false || $tmdbId <= 0) {
+                sendResponse(null, 400, 'tmdb_id must be a positive integer');
             }
             
             if ($rating === false) {
@@ -202,16 +202,18 @@ try {
                 $review = null;
             }
             
-            // Check if rating already exists
-            $existingRating = $ratingRepo->getUserRating($userId, $movieId);
-            if ($existingRating !== null) {
-                sendResponse(null, 409, 'Rating already exists. Use PUT to update.');
-            }
+            // Extract movie snapshot data
+            $movieData = [
+                'title' => $input['title'] ?? null,
+                'poster_url' => $input['poster_url'] ?? null,
+                'release_year' => isset($input['release_year']) ? filter_var($input['release_year'], FILTER_VALIDATE_INT) : null,
+                'category' => $input['category'] ?? null
+            ];
             
-            $result = $ratingRepo->addRating($userId, $movieId, $rating, $review);
+            $result = $ratingRepo->addRating($userId, $tmdbId, $rating, $movieData, $review);
             
             if ($result) {
-                sendResponse(['message' => 'Rating added successfully'], 201);
+                sendResponse(['message' => 'Rating saved successfully'], 201);
             } else {
                 sendResponse(null, 500, 'Failed to add rating');
             }
