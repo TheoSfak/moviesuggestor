@@ -1,0 +1,24 @@
+{
+    "name": "moviesuggestor",
+    "description": "A PHP + MySQL web application that suggests movies to users",
+    "type": "project",
+    "require": {
+        "php": ">=8.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "MovieSuggestor\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "MovieSuggestor\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}

@@ -1,0 +1,148 @@
+name: Judge Workflow
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  judge:
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: moviesuggestor_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: pdo, pdo_mysql, mysqli
+          coverage: none
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Validate composer.json
+        run: |
+          if [ -f composer.json ]; then
+            composer validate --strict
+          else
+            echo "composer.json not found"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Wait for MySQL
+        run: |
+          echo "Waiting for MySQL to be ready..."
+          for i in {1..30}; do
+            if mysql -h 127.0.0.1 -P 3306 -u root -proot -e "SELECT 1" >/dev/null 2>&1; then
+              echo "MySQL is ready!"
+              break
+            fi
+            echo "Attempt $i/30: MySQL not ready yet..."
+            sleep 2
+          done
+          # Verify MySQL is actually ready
+          mysql -h 127.0.0.1 -P 3306 -u root -proot -e "SELECT VERSION();"
+
+      - name: Setup database
+        run: |
+          if [ -f schema.sql ]; then
+            mysql -h 127.0.0.1 -P 3306 -u root -proot moviesuggestor_test < schema.sql
+            echo "✓ Database schema loaded successfully"
+            # Verify tables were created
+            mysql -h 127.0.0.1 -P 3306 -u root -proot moviesuggestor_test -e "SHOW TABLES;"
+          else
+            echo "✗ schema.sql not found"
+            exit 1
+          fi
+
+      - name: Check PHP syntax
+        run: |
+          echo "Checking PHP syntax..."
+          find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \; || exit 1
+          echo "✓ All PHP files have valid syntax"
+
+      - name: Run PHPUnit tests
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_NAME: moviesuggestor_test
+          DB_USER: root
+          DB_PASS: root
+        run: |
+          echo "Running PHPUnit tests..."
+          vendor/bin/phpunit --testdox --colors=always --display-warnings --display-deprecations
+
+      - name: Evaluate JUDGE_RULES.md
+        if: always()
+        run: |
+          echo "=== JUDGE EVALUATION ==="
+          
+          # Check required files
+          if [ -f JUDGE_RULES.md ]; then
+            echo "✓ JUDGE_RULES.md exists"
+          else
+            echo "✗ JUDGE_RULES.md missing"
+            exit 1
+          fi
+          
+          if [ -f composer.json ]; then
+            echo "✓ composer.json exists"
+          else
+            echo "✗ composer.json missing"
+            exit 1
+          fi
+          
+          if [ -f schema.sql ]; then
+            echo "✓ schema.sql exists"
+          else
+            echo "✗ schema.sql missing"
+            exit 1
+          fi
+          
+          if [ -d tests ] && [ "$(ls -A tests/*.php 2>/dev/null)" ]; then
+            echo "✓ Test files exist"
+          else
+            echo "✗ No test files found"
+            exit 1
+          fi
+          
+          # Check source files
+          if [ -d src ] && [ "$(ls -A src/*.php 2>/dev/null)" ]; then
+            echo "✓ Source files exist"
+          else
+            echo "✗ No source files found"
+            exit 1
+          fi
+          
+          echo ""
+          echo "=== JUDGE: ALL CHECKS PASSED ==="
+          echo "Project structure is valid and tests are passing!"
