@@ -1,0 +1,135 @@
+<?php
+/**
+ * FilterBuilder - Template for Phase 2
+ * 
+ * DO NOT ACTIVATE UNTIL PHASE 1 APPROVED
+ * 
+ * This file contains the template for the FilterBuilder class.
+ * When Phase 2 is activated:
+ * 1. Remove .template extension
+ * 2. Move to src/ directory
+ * 3. Uncomment code blocks
+ * 4. Run tests
+ */
+
+// namespace MovieSuggestor;
+
+/**
+ * Builder for constructing complex movie filter queries
+ * 
+ * Features:
+ * - Fluent interface for building filters
+ * - Multi-category support
+ * - Score range filtering
+ * - Year range filtering
+ * - Text search
+ * - Runtime filtering
+ */
+// class FilterBuilder
+// {
+//     private array $filters = [];
+//     private array $params = [];
+//
+//     /**
+//      * Filter by categories (OR logic)
+//      * 
+//      * @param array $categories Array of category names
+//      * @return self
+//      */
+//     public function withCategories(array $categories): self
+//     {
+//         // TODO: Implement
+//         // if (!empty($categories)) {
+//         //     $placeholders = str_repeat('?,', count($categories) - 1) . '?';
+//         //     $this->filters[] = "category IN ($placeholders)";
+//         //     $this->params = array_merge($this->params, $categories);
+//         // }
+//         return $this;
+//     }
+//
+//     /**
+//      * Filter by score range
+//      * 
+//      * @param float|null $minScore Minimum score
+//      * @param float|null $maxScore Maximum score
+//      * @return self
+//      */
+//     public function withScoreRange(?float $minScore, ?float $maxScore): self
+//     {
+//         // TODO: Implement
+//         // if ($minScore !== null) {
+//         //     $this->filters[] = "score >= ?";
+//         //     $this->params[] = $minScore;
+//         // }
+//         // if ($maxScore !== null) {
+//         //     $this->filters[] = "score <= ?";
+//         //     $this->params[] = $maxScore;
+//         // }
+//         return $this;
+//     }
+//
+//     /**
+//      * Filter by year range
+//      * 
+//      * @param int|null $minYear Minimum year
+//      * @param int|null $maxYear Maximum year
+//      * @return self
+//      */
+//     public function withYearRange(?int $minYear, ?int $maxYear): self
+//     {
+//         // TODO: Implement
+//         return $this;
+//     }
+//
+//     /**
+//      * Search by text in title or description
+//      * 
+//      * @param string|null $searchText Search term
+//      * @return self
+//      */
+//     public function withTextSearch(?string $searchText): self
+//     {
+//         // TODO: Implement
+//         // if ($searchText !== null && $searchText !== '') {
+//         //     $this->filters[] = "(title LIKE ? OR description LIKE ?)";
+//         //     $searchTerm = "%$searchText%";
+//         //     $this->params[] = $searchTerm;
+//         //     $this->params[] = $searchTerm;
+//         // }
+//         return $this;
+//     }
+//
+//     /**
+//      * Build WHERE clause
+//      * 
+//      * @return string WHERE clause (without WHERE keyword)
+//      */
+//     public function buildWhereClause(): string
+//     {
+//         // TODO: Implement
+//         // return empty($this->filters) ? '1=1' : implode(' AND ', $this->filters);
+//         return '1=1';
+//     }
+//
+//     /**
+//      * Get query parameters
+//      * 
+//      * @return array Parameters for prepared statement
+//      */
+//     public function getParams(): array
+//     {
+//         return $this->params;
+//     }
+//
+//     /**
+//      * Reset builder state
+//      * 
+//      * @return self
+//      */
+//     public function reset(): self
+//     {
+//         $this->filters = [];
+//         $this->params = [];
+//         return $this;
+//     }
+// }

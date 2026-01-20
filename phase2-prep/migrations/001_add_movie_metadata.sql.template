@@ -1,0 +1,41 @@
+-- Migration 001: Add Movie Metadata Columns
+-- DO NOT RUN UNTIL PHASE 1 APPROVED
+-- 
+-- This migration adds enhanced metadata columns to the movies table
+-- to support Phase 2 features like advanced filtering and better UX.
+--
+-- To activate:
+-- 1. Remove .template extension
+-- 2. Remove comment markers (-- )
+-- 3. Run migration script
+
+/*
+BEGIN;
+
+-- Add new columns to movies table
+ALTER TABLE movies 
+ADD COLUMN release_year INT DEFAULT NULL COMMENT 'Year the movie was released',
+ADD COLUMN director VARCHAR(255) DEFAULT NULL COMMENT 'Primary director name',
+ADD COLUMN actors TEXT DEFAULT NULL COMMENT 'Comma-separated list of main actors',
+ADD COLUMN runtime_minutes INT DEFAULT NULL COMMENT 'Movie runtime in minutes',
+ADD COLUMN poster_url VARCHAR(500) DEFAULT NULL COMMENT 'URL to movie poster image',
+ADD COLUMN backdrop_url VARCHAR(500) DEFAULT NULL COMMENT 'URL to backdrop/banner image',
+ADD COLUMN imdb_rating DECIMAL(3,1) DEFAULT NULL COMMENT 'Official IMDB rating (0.0-10.0)',
+ADD COLUMN user_rating DECIMAL(3,1) DEFAULT NULL COMMENT 'Calculated average user rating',
+ADD COLUMN votes_count INT DEFAULT 0 COMMENT 'Number of user ratings',
+ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Record creation time',
+ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Record update time';
+
+-- Add check constraints for data validation
+ALTER TABLE movies
+ADD CONSTRAINT check_release_year CHECK (release_year IS NULL OR (release_year >= 1888 AND release_year <= 2100)),
+ADD CONSTRAINT check_runtime CHECK (runtime_minutes IS NULL OR runtime_minutes > 0),
+ADD CONSTRAINT check_imdb_rating CHECK (imdb_rating IS NULL OR (imdb_rating >= 0 AND imdb_rating <= 10)),
+ADD CONSTRAINT check_user_rating CHECK (user_rating IS NULL OR (user_rating >= 0 AND user_rating <= 10)),
+ADD CONSTRAINT check_votes_count CHECK (votes_count >= 0);
+
+COMMIT;
+
+-- Migration completed successfully
+SELECT 'Migration 001 completed: Movie metadata columns added' as status;
+*/

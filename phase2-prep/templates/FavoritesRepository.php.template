@@ -1,0 +1,108 @@
+<?php
+/**
+ * FavoritesRepository - Template for Phase 2
+ * 
+ * DO NOT ACTIVATE UNTIL PHASE 1 APPROVED
+ * 
+ * This file contains the template for the FavoritesRepository class.
+ * When Phase 2 is activated:
+ * 1. Remove .template extension
+ * 2. Move to src/ directory
+ * 3. Uncomment code blocks
+ * 4. Run tests
+ */
+
+// namespace MovieSuggestor;
+
+// use PDO;
+
+/**
+ * Repository for managing user favorites
+ * 
+ * Features:
+ * - Add/remove favorites
+ * - Get user's favorite movies
+ * - Check if movie is favorited
+ * - Get favorites count
+ */
+// class FavoritesRepository
+// {
+//     private PDO $db;
+//
+//     public function __construct(PDO $db)
+//     {
+//         $this->db = $db;
+//     }
+//
+//     /**
+//      * Add a movie to user's favorites
+//      * 
+//      * @param int $userId User ID
+//      * @param int $movieId Movie ID
+//      * @return bool Success status
+//      */
+//     public function add(int $userId, int $movieId): bool
+//     {
+//         // TODO: Implement
+//         // INSERT INTO favorites (user_id, movie_id) VALUES (?, ?)
+//         // Handle duplicate key errors gracefully
+//         return false;
+//     }
+//
+//     /**
+//      * Remove a movie from user's favorites
+//      * 
+//      * @param int $userId User ID
+//      * @param int $movieId Movie ID
+//      * @return bool Success status
+//      */
+//     public function remove(int $userId, int $movieId): bool
+//     {
+//         // TODO: Implement
+//         // DELETE FROM favorites WHERE user_id = ? AND movie_id = ?
+//         return false;
+//     }
+//
+//     /**
+//      * Get all favorite movies for a user
+//      * 
+//      * @param int $userId User ID
+//      * @return array Array of movie objects
+//      */
+//     public function getFavorites(int $userId): array
+//     {
+//         // TODO: Implement
+//         // SELECT m.* FROM movies m
+//         // JOIN favorites f ON m.id = f.movie_id
+//         // WHERE f.user_id = ?
+//         // ORDER BY f.created_at DESC
+//         return [];
+//     }
+//
+//     /**
+//      * Check if a movie is in user's favorites
+//      * 
+//      * @param int $userId User ID
+//      * @param int $movieId Movie ID
+//      * @return bool True if favorited
+//      */
+//     public function isFavorited(int $userId, int $movieId): bool
+//     {
+//         // TODO: Implement
+//         // SELECT COUNT(*) FROM favorites WHERE user_id = ? AND movie_id = ?
+//         return false;
+//     }
+//
+//     /**
+//      * Get count of favorites for a user
+//      * 
+//      * @param int $userId User ID
+//      * @return int Number of favorites
+//      */
+//     public function getCount(int $userId): int
+//     {
+//         // TODO: Implement
+//         // SELECT COUNT(*) FROM favorites WHERE user_id = ?
+//         return 0;
+//     }
+// }

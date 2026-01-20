@@ -1,0 +1,43 @@
+-- Migration 004: Create Ratings Table
+-- DO NOT RUN UNTIL PHASE 1 APPROVED
+-- 
+-- This migration creates the ratings table for Phase 2 user rating features.
+--
+-- To activate:
+-- 1. Remove .template extension
+-- 2. Remove comment markers (-- )
+-- 3. Run migration script
+
+/*
+BEGIN;
+
+-- Create ratings table
+CREATE TABLE IF NOT EXISTS ratings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL COMMENT 'User who rated the movie',
+    movie_id INT NOT NULL COMMENT 'Reference to movies.id',
+    rating DECIMAL(3,1) NOT NULL COMMENT 'User rating (0.0-10.0)',
+    review TEXT DEFAULT NULL COMMENT 'Optional review text',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'When rating was created',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'When rating was last updated',
+    
+    -- Foreign key to movies table
+    CONSTRAINT fk_ratings_movie FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+    
+    -- Ensure a user can rate a movie only once
+    UNIQUE KEY unique_user_movie_rating (user_id, movie_id),
+    
+    -- Check constraint for valid rating range
+    CONSTRAINT check_rating_range CHECK (rating >= 0 AND rating <= 10),
+    
+    -- Indexes for efficient queries
+    INDEX idx_user_ratings (user_id, created_at DESC),
+    INDEX idx_movie_ratings (movie_id),
+    INDEX idx_high_ratings (movie_id, rating)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User movie ratings';
+
+COMMIT;
+
+-- Migration completed successfully
+SELECT 'Migration 004 completed: Ratings table created' as status;
+*/

@@ -4,6 +4,9 @@
          bootstrap="vendor/autoload.php"
          colors="true"
          testdox="true">
+    <php>
+        <env name="DB_NAME" value="moviesuggestor_test"/>
+    </php>
     <testsuites>
         <testsuite name="MovieSuggestor Test Suite">
             <directory>tests</directory>

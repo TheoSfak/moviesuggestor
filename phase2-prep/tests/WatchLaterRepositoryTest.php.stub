@@ -1,0 +1,37 @@
+<?php
+/**
+ * WatchLaterRepositoryTest - Test Stub for Phase 2
+ * 
+ * DO NOT ACTIVATE UNTIL PHASE 1 APPROVED
+ */
+
+// use PHPUnit\Framework\TestCase;
+// use MovieSuggestor\WatchLaterRepository;
+
+// class WatchLaterRepositoryTest extends TestCase
+// {
+//     public function testAddToWatchLater(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testMarkWatched(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testGetWatchLater(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testGetWatchedHistory(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testRemoveFromWatchLater(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+// }

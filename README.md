@@ -1,14 +1,24 @@
 # Movie Suggestor
 
-A PHP + MySQL web application that suggests movies to users based on category and minimum score.
+A PHP + MySQL web application that suggests movies to users based on advanced filtering criteria and enables rich user interactions.
 
-## Features
+## ✨ Features
 
+### Phase 1 - Core Features
 - ✅ Filter movies by category
 - ✅ Filter movies by minimum score
 - ✅ View movie details with trailer links
 - ✅ Graceful handling of empty results
 - ✅ Clean, responsive UI
+
+### Phase 2 - Advanced Features (NEW)
+- ✅ **Advanced Filtering**: Multi-criteria filtering (category, score range, year, runtime, director, text search)
+- ✅ **User Favorites**: Save and manage favorite movies
+- ✅ **Watch Later**: Create a watch later list with watched status tracking
+- ✅ **User Ratings**: Rate movies (0-10) with optional reviews
+- ✅ **Enhanced Metadata**: Release year, director, actors, runtime, poster images, IMDB ratings
+- ✅ **RESTful API**: Full API support for all user interaction features
+- ✅ **Comprehensive Testing**: 199 tests with 491 assertions (100% pass rate)
 
 ## Tech Stack
 
@@ -37,6 +47,21 @@ Create a MySQL database and import the schema:
 mysql -u root -p -e "CREATE DATABASE moviesuggestor;"
 mysql -u root -p moviesuggestor < schema.sql
 ```
+
+### 3b. Run Migrations (Phase 2)
+
+Apply database migrations for Phase 2 features:
+
+```bash
+php migrations/run-migrations.php
+```
+
+This will create:
+- Enhanced movies table with metadata columns
+- Favorites table for user favorites
+- Watch later table for watch later functionality
+- Ratings table for user reviews
+- Optimized indexes for performance
 
 ### 4. Configure Database Connection
 
@@ -82,20 +107,58 @@ $env:DB_NAME="moviesuggestor_test"; vendor/bin/phpunit
 
 ```
 moviesuggestor/
-├── src/
+├── api/                     # RESTful API endpoints
+│   ├── favorites.php        # Favorites management
+│   ├── watch-later.php      # Watch later list
+│   ├── ratings.php          # User ratings
+│   └── README.md            # API documentation
+├── src/                     # Core application classes
 │   ├── Database.php         # Database connection handler
-│   └── MovieRepository.php  # Movie data access layer
-├── tests/
-│   └── MovieRepositoryTest.php  # PHPUnit tests
+│   ├── MovieRepository.php  # Movie data access layer
+│   ├── FavoritesRepository.php    # Favorites management
+│   ├── WatchLaterRepository.php   # Watch later functionality
+│   ├── RatingRepository.php       # Ratings and reviews
+│   └── FilterBuilder.php    # Advanced filtering system
+├── tests/                   # PHPUnit test suite (199 tests)
+│   ├── MovieRepositoryTest.php
+│   ├── FavoritesRepositoryTest.php
+│   ├── WatchLaterRepositoryTest.php
+│   ├── RatingRepositoryTest.php
+│   └── FilterBuilderTest.php
+├── migrations/              # Database migration system
+│   ├── 001_add_movie_metadata.sql
+│   ├── 002_create_favorites_table.sql
+│   ├── 003_create_watch_later_table.sql
+│   ├── 004_create_ratings_table.sql
+│   ├── 005_create_indexes.sql
+│   └── run-migrations.php
 ├── index.php                # Main application UI
 ├── schema.sql               # Database schema and sample data
 ├── composer.json            # PHP dependencies
 ├── phpunit.xml              # PHPUnit configuration
 ├── JUDGE_RULES.md           # Judge evaluation criteria
+├── PHASE2_COMPLETE.md       # Phase 2 completion report
 └── .github/
     └── workflows/
         └── judge.yml        # CI/CD workflow
 ```
+
+## API Documentation
+
+The application provides RESTful API endpoints for all user interaction features:
+
+- **Favorites API**: `/api/favorites.php` - Add, remove, and list favorite movies
+- **Watch Later API**: `/api/watch-later.php` - Manage watch later list and track watched movies
+- **Ratings API**: `/api/ratings.php` - Rate movies and write reviews
+
+Full API documentation available at `/api/` or see [api/README.md](api/README.md).
+
+## Documentation
+
+- [PHASE2_COMPLETE.md](PHASE2_COMPLETE.md) - Phase 2 completion report and feature summary
+- [MIGRATION_VALIDATION_REPORT.md](MIGRATION_VALIDATION_REPORT.md) - Database migration details
+- [PHASE2_TEST_SUMMARY.md](PHASE2_TEST_SUMMARY.md) - Comprehensive test coverage report
+- [api/README.md](api/README.md) - API documentation and examples
 
 ## Development Workflow
 

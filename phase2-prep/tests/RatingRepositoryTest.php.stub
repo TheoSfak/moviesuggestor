@@ -1,0 +1,48 @@
+<?php
+/**
+ * RatingRepositoryTest - Test Stub for Phase 2
+ * 
+ * DO NOT ACTIVATE UNTIL PHASE 1 APPROVED
+ */
+
+// use PHPUnit\Framework\TestCase;
+// use MovieSuggestor\RatingRepository;
+
+// class RatingRepositoryTest extends TestCase
+// {
+//     public function testAddRating(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testUpdateRating(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testGetAverageRating(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testGetUserRating(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testGetRatingStats(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testUpdateMovieRating(): void
+//     {
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testInvalidRatingRange(): void
+//     {
+//         // Test that ratings outside 0-10 are rejected
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+// }

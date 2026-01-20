@@ -1,0 +1,36 @@
+-- Migration 002: Create Favorites Table
+-- DO NOT RUN UNTIL PHASE 1 APPROVED
+-- 
+-- This migration creates the favorites table for Phase 2 user features.
+--
+-- To activate:
+-- 1. Remove .template extension
+-- 2. Remove comment markers (-- )
+-- 3. Run migration script
+
+/*
+BEGIN;
+
+-- Create favorites table
+CREATE TABLE IF NOT EXISTS favorites (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL COMMENT 'User who favorited (for future user system)',
+    movie_id INT NOT NULL COMMENT 'Reference to movies.id',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'When movie was favorited',
+    
+    -- Foreign key to movies table
+    CONSTRAINT fk_favorites_movie FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE,
+    
+    -- Ensure a user can favorite a movie only once
+    UNIQUE KEY unique_user_movie (user_id, movie_id),
+    
+    -- Index for quick lookups
+    INDEX idx_user_favorites (user_id, created_at DESC),
+    INDEX idx_movie_favorites (movie_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User favorite movies';
+
+COMMIT;
+
+-- Migration completed successfully
+SELECT 'Migration 002 completed: Favorites table created' as status;
+*/

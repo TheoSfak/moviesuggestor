@@ -1,0 +1,72 @@
+<?php
+/**
+ * FavoritesRepositoryTest - Test Stub for Phase 2
+ * 
+ * DO NOT ACTIVATE UNTIL PHASE 1 APPROVED
+ * 
+ * Test scaffolding for FavoritesRepository.
+ * When activated:
+ * 1. Rename to FavoritesRepositoryTest.php
+ * 2. Move to tests/ directory
+ * 3. Uncomment test methods
+ * 4. Implement test logic
+ */
+
+// use PHPUnit\Framework\TestCase;
+// use MovieSuggestor\FavoritesRepository;
+// use MovieSuggestor\Database;
+
+// class FavoritesRepositoryTest extends TestCase
+// {
+//     private FavoritesRepository $repo;
+//     private PDO $db;
+//
+//     protected function setUp(): void
+//     {
+//         // TODO: Setup test database connection
+//         // $this->db = Database::getConnection();
+//         // $this->repo = new FavoritesRepository($this->db);
+//     }
+//
+//     public function testAddFavorite(): void
+//     {
+//         // TODO: Test adding a movie to favorites
+//         // $this->assertTrue($this->repo->add(1, 1));
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testRemoveFavorite(): void
+//     {
+//         // TODO: Test removing a movie from favorites
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testGetFavorites(): void
+//     {
+//         // TODO: Test retrieving user's favorites
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testIsFavorited(): void
+//     {
+//         // TODO: Test checking if movie is favorited
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testGetCount(): void
+//     {
+//         // TODO: Test getting favorites count
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     public function testDuplicateFavorite(): void
+//     {
+//         // TODO: Test that duplicate favorites are handled gracefully
+//         $this->markTestIncomplete('Test not yet implemented');
+//     }
+//
+//     protected function tearDown(): void
+//     {
+//         // TODO: Clean up test data
+//     }
+// }
