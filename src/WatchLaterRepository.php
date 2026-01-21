@@ -124,8 +124,8 @@ class WatchLaterRepository
             $watchedFilter = $includeWatched ? '' : 'AND watched = FALSE';
             
             $stmt = $this->db->prepare(
-                "SELECT tmdb_id as id, tmdb_id, movie_title as title, 
-                       poster_url, release_year as year, category,
+                "SELECT tmdb_id, movie_title, 
+                       poster_url, release_year, category,
                        added_at, watched, watched_at
                  FROM watch_later
                  WHERE user_id = :user_id {$watchedFilter}

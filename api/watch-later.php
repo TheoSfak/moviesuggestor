@@ -6,10 +6,10 @@
  * RESTful API for managing user watch later list.
  * 
  * Supported operations:
- * - GET    /api/watch-later.php?user_id={id}[&include_watched=1] - List watch later movies
- * - POST   /api/watch-later.php - Add to watch later
- * - DELETE /api/watch-later.php - Remove from watch later
- * - PATCH  /api/watch-later.php - Mark as watched
+ * - GET    /api/watch-later.php - List watch later movies (requires auth)
+ * - POST   /api/watch-later.php - Add to watch later (requires auth + CSRF)
+ * - DELETE /api/watch-later.php - Remove from watch later (requires auth + CSRF)
+ * - PATCH  /api/watch-later.php - Mark as watched (requires auth + CSRF)
  * - OPTIONS - CORS preflight
  * 
  * @package MovieSuggestor
@@ -17,27 +17,43 @@
 
 require_once __DIR__ . '/../src/Database.php';
 require_once __DIR__ . '/../src/WatchLaterRepository.php';
+require_once __DIR__ . '/../src/Security.php';
 
 use MovieSuggestor\Database;
 use MovieSuggestor\WatchLaterRepository;
+use MovieSuggestor\Security;
 
 // Enable error logging
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
+// Initialize secure session
+Security::initSession();
+
 // Set JSON response headers
 header('Content-Type: application/json');
 
-// CORS headers
+// CORS headers - restrict to specific domains in production
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, DELETE, PATCH, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token');
 header('Access-Control-Max-Age: 3600');
 
 // Handle OPTIONS request for CORS preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
+}
+
+// Require authentication for all operations
+Security::requireAuth();
+
+// Get authenticated user ID (NEVER trust client input)
+$authenticatedUserId = Security::getUserId();
+
+// Require CSRF token for state-changing operations
+if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'DELETE', 'PATCH'])) {
+    Security::requireCSRFToken();
 }
 
 /**
@@ -114,20 +130,11 @@ try {
     
     switch ($method) {
         case 'GET':
-            // List watch later movies for a user
-            if (!isset($_GET['user_id'])) {
-                sendResponse(null, 400, 'user_id parameter is required');
-            }
-            
-            $userId = filter_var($_GET['user_id'], FILTER_VALIDATE_INT);
-            if ($userId === false || $userId <= 0) {
-                sendResponse(null, 400, 'user_id must be a positive integer');
-            }
-            
+            // List watch later movies for authenticated user
             $includeWatched = isset($_GET['include_watched']) && $_GET['include_watched'] === '1';
             
-            $watchLater = $watchLaterRepo->getWatchLater($userId, $includeWatched);
-            $unwatchedCount = $watchLaterRepo->getUnwatchedCount($userId);
+            $watchLater = $watchLaterRepo->getWatchLater($authenticatedUserId, $includeWatched);
+            $unwatchedCount = $watchLaterRepo->getUnwatchedCount($authenticatedUserId);
             
             sendResponse([
                 'movies' => $watchLater,
@@ -144,16 +151,11 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'tmdb_id'])) {
-                sendResponse(null, 400, 'user_id and tmdb_id are required');
+            if (!validateRequired($input, ['tmdb_id'])) {
+                sendResponse(null, 400, 'tmdb_id is required');
             }
             
-            $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
             $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
-            
-            if ($userId === false || $userId <= 0) {
-                sendResponse(null, 400, 'user_id must be a positive integer');
-            }
             
             if ($tmdbId === false || $tmdbId <= 0) {
                 sendResponse(null, 400, 'tmdb_id must be a positive integer');
@@ -168,12 +170,12 @@ try {
             ];
             
             // Check if already in watch later
-            $isInList = $watchLaterRepo->isInWatchLater($userId, $tmdbId);
+            $isInList = $watchLaterRepo->isInWatchLater($authenticatedUserId, $tmdbId);
             if ($isInList) {
                 sendResponse(['message' => 'Movie is already in watch later list'], 200);
             }
             
-            $result = $watchLaterRepo->addToWatchLater($userId, $tmdbId, $movieData);
+            $result = $watchLaterRepo->addToWatchLater($authenticatedUserId, $tmdbId, $movieData);
             
             if ($result) {
                 sendResponse(['message' => 'Movie added to watch later'], 201);
@@ -190,22 +192,17 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'tmdb_id'])) {
-                sendResponse(null, 400, 'user_id and tmdb_id are required');
+            if (!validateRequired($input, ['tmdb_id'])) {
+                sendResponse(null, 400, 'tmdb_id is required');
             }
             
-            $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
             $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
-            
-            if ($userId === false || $userId <= 0) {
-                sendResponse(null, 400, 'user_id must be a positive integer');
-            }
             
             if ($tmdbId === false || $tmdbId <= 0) {
                 sendResponse(null, 400, 'tmdb_id must be a positive integer');
             }
             
-            $result = $watchLaterRepo->removeFromWatchLater($userId, $tmdbId);
+            $result = $watchLaterRepo->removeFromWatchLater($authenticatedUserId, $tmdbId);
             
             if ($result) {
                 sendResponse(['message' => 'Movie removed from watch later'], 200);
@@ -222,22 +219,17 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'tmdb_id'])) {
-                sendResponse(null, 400, 'user_id and tmdb_id are required');
+            if (!validateRequired($input, ['tmdb_id'])) {
+                sendResponse(null, 400, 'tmdb_id is required');
             }
             
-            $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
             $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
-            
-            if ($userId === false || $userId <= 0) {
-                sendResponse(null, 400, 'user_id must be a positive integer');
-            }
             
             if ($tmdbId === false || $tmdbId <= 0) {
                 sendResponse(null, 400, 'tmdb_id must be a positive integer');
             }
             
-            $result = $watchLaterRepo->markAsWatched($userId, $tmdbId);
+            $result = $watchLaterRepo->markAsWatched($authenticatedUserId, $tmdbId);
             
             if ($result) {
                 sendResponse(['message' => 'Movie marked as watched'], 200);

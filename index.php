@@ -20,22 +20,38 @@ if (file_exists(__DIR__ . '/.env')) {
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: DENY");
 header("X-XSS-Protection: 1; mode=block");
-
-// Start session for user simulation
-session_start();
-
-// Simulate user login (in production, this would be proper authentication)
-if (!isset($_SESSION['user_id'])) {
-    $_SESSION['user_id'] = 1; // Default user for demo
-    $_SESSION['username'] = 'Demo User';
-}
+header("Referrer-Policy: strict-origin-when-cross-origin");
 
 require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/src/Security.php';
+
+use MovieSuggestor\Security;
+
+// Initialize secure session
+Security::initSession();
+
+// Check if user wants to continue as guest
+$guestMode = isset($_GET['guest']) && $_GET['guest'] === '1';
+
+if ($guestMode) {
+    // Guest mode: Create temporary session for demo
+    if (!isset($_SESSION['guest_id'])) {
+        $_SESSION['guest_id'] = 'guest_' . uniqid();
+        $_SESSION['user_id'] = 999999; // Special guest user ID
+        $_SESSION['username'] = 'Guest User';
+        $_SESSION['is_guest'] = true;
+    }
+} else {
+    // Require authentication for full features
+    Security::requireAuth();
+}
+
+// Get authenticated user ID (never trust client input)
+$userId = Security::getUserId();
 
 use MovieSuggestor\Database;
 use MovieSuggestor\TMDBService;
 use MovieSuggestor\FavoritesRepository;
-use MovieSuggestor\WatchLaterRepository;
 use MovieSuggestor\RatingRepository;
 
 // Get filter parameters
@@ -57,7 +73,6 @@ $errorMessage = '';
 $totalMovies = 0;
 $totalPages = 1;
 $userFavorites = [];
-$userWatchLater = [];
 $userRatings = [];
 
 try {
@@ -65,7 +80,6 @@ try {
     $tmdbService = new TMDBService();
     $database = new Database();
     $favoritesRepo = new FavoritesRepository($database);
-    $watchLaterRepo = new WatchLaterRepository($database->connect());
     $ratingRepo = new RatingRepository($database);
 
     // Map Greek categories to TMDB genre IDs
@@ -137,20 +151,13 @@ try {
         $errorMessage = $tmdbResponse['error'] ?? 'Failed to load movies from TMDB';
     }
     
-    // Get user's favorites, watch later, and ratings (by tmdb_id)
-    $userId = $_SESSION['user_id'];
+    // Get user's favorites and ratings (by tmdb_id)
     $userFavoritesData = $favoritesRepo->getFavorites($userId);
-    $userWatchLaterData = $watchLaterRepo->getWatchLater($userId, false);
     
     // Convert to lookup arrays by tmdb_id
     foreach ($userFavoritesData as $fav) {
         if (!empty($fav['tmdb_id'])) {
             $userFavorites[$fav['tmdb_id']] = true;
-        }
-    }
-    foreach ($userWatchLaterData as $wl) {
-        if (!empty($wl['tmdb_id'])) {
-            $userWatchLater[$wl['tmdb_id']] = true;
         }
     }
     
@@ -284,9 +291,30 @@ try {
             <h1>🎬 Movie Suggestor</h1>
             <div class="user-info">
                 <strong><?= htmlspecialchars($_SESSION['username']) ?></strong><br>
-                <small>User ID: <?= $_SESSION['user_id'] ?></small>
+                <small>
+                    <?php if (isset($_SESSION['is_guest']) && $_SESSION['is_guest']): ?>
+                        Guest Mode | <a href="login.php" style="color: #667eea;">Sign In</a>
+                    <?php else: ?>
+                        <a href="my-favorites.php" style="color: #e74c3c; font-weight: 600;">❤️ My Favorites</a> | 
+                        <a href="auth/profile.php" style="color: #667eea;">Profile</a> | 
+                        <a href="logout.php" style="color: #667eea;">Logout</a>
+                    <?php endif; ?>
+                </small>
             </div>
         </div>
+        
+        <?php if (isset($_SESSION['is_guest']) && $_SESSION['is_guest']): ?>
+            <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 6px; margin-bottom: 20px; color: #856404;">
+                <strong>⚠️ Guest Mode:</strong> You're viewing in limited mode. 
+                <a href="register.php" style="color: #667eea; font-weight: 600;">Create an account</a> to save favorites, ratings, and watch later lists.
+            </div>
+        <?php endif; ?>
+        
+        <?php if (isset($_GET['registered']) && $_GET['registered'] === '1'): ?>
+            <div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 6px; margin-bottom: 20px; color: #155724;">
+                <strong>✅ Welcome!</strong> Your account has been created successfully. Start exploring movies!
+            </div>
+        <?php endif; ?>
         
         <div id="success-message" style="display: none;" class="success-message"></div>
         
@@ -416,6 +444,7 @@ try {
                     $imdbRating = $movie['imdb_rating'] ?? null;
                 ?>
                     <div class="movie-card" data-tmdb-id="<?= $tmdbId ?>" data-title="<?= htmlspecialchars($title) ?>" data-poster="<?= htmlspecialchars($posterUrl) ?>" data-year="<?= $year ?>" data-category="<?= htmlspecialchars($category) ?>">
+                        <a href="movie-details.php?id=<?= $tmdbId ?>" style="text-decoration: none; color: inherit;">
                         <?php if (!empty($posterUrl)): ?>
                         <img src="<?= htmlspecialchars($posterUrl) ?>" 
                              alt="<?= htmlspecialchars($title) ?>" 
@@ -423,6 +452,7 @@ try {
                              onerror="this.src='https://via.placeholder.com/500x750?text=No+Poster'">
                         <?php endif; ?>
                         <div class="movie-title"><?= htmlspecialchars($title) ?></div>
+                        </a>
                         <?php if (!empty($movie['original_title']) && $movie['original_title'] !== $title): ?>
                             <div style="font-size: 13px; color: #999; font-style: italic; margin-bottom: 8px;"><?= htmlspecialchars($movie['original_title']) ?></div>
                         <?php endif; ?>
@@ -443,11 +473,6 @@ try {
                             <button class="action-btn favorite-btn <?= isset($userFavorites[$tmdbId]) ? 'active' : '' ?>" 
                                     onclick="toggleFavorite(<?= $tmdbId ?>, this)">
                                 ❤️ <?= isset($userFavorites[$tmdbId]) ? 'Favorited' : 'Favorite' ?>
-                            </button>
-                            
-                            <button class="action-btn watchlater-btn <?= isset($userWatchLater[$tmdbId]) ? 'active' : '' ?>" 
-                                    onclick="toggleWatchLater(<?= $tmdbId ?>, this)">
-                                📌 <?= isset($userWatchLater[$tmdbId]) ? 'In List' : 'Watch Later' ?>
                             </button>
                             
                             <button class="action-btn trailer-btn" 
@@ -503,7 +528,18 @@ try {
     <script>
         // API endpoint for AJAX calls
         const API_URL = 'api.php';
-        const USER_ID = <?= $_SESSION['user_id'] ?>;
+        const USER_ID = <?= $userId ?>;
+        const IS_GUEST = <?= isset($_SESSION['is_guest']) && $_SESSION['is_guest'] ? 'true' : 'false' ?>;
+        const CSRF_TOKEN = '<?= Security::generateCSRFToken() ?>';
+        
+        // Check if guest mode - warn about limited features
+        function checkGuestMode() {
+            if (IS_GUEST) {
+                alert('⚠️ Guest Mode: This feature requires an account. Please sign in or register.');
+                return false;
+            }
+            return true;
+        }
         
         // Show success message
         function showMessage(message, duration = 3000) {
@@ -518,6 +554,8 @@ try {
         
         // Toggle Favorite
         async function toggleFavorite(tmdbId, button) {
+            if (!checkGuestMode()) return;
+            
             const isActive = button.classList.contains('active');
             const action = isActive ? 'remove' : 'add';
             
@@ -534,11 +572,12 @@ try {
             try {
                 const response = await fetch('api/favorites.php', {
                     method: isActive ? 'DELETE' : 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        user_id: USER_ID,
-                        ...movieData
-                    })
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': CSRF_TOKEN
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(movieData)
                 });
                 
                 const data = await response.json();
@@ -557,47 +596,11 @@ try {
         }
         
         // Toggle Watch Later
-        async function toggleWatchLater(tmdbId, button) {
-            const isActive = button.classList.contains('active');
-            const action = isActive ? 'remove' : 'add';
-            
-            // Get movie data from card
-            const card = button.closest('.movie-card');
-            const movieData = {
-                tmdb_id: tmdbId,
-                title: card.dataset.title,
-                poster_url: card.dataset.poster,
-                release_year: card.dataset.year,
-                category: card.dataset.category
-            };
-            
-            try {
-                const response = await fetch('api/watch-later.php', {
-                    method: isActive ? 'DELETE' : 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        user_id: USER_ID,
-                        ...movieData
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    button.classList.toggle('active');
-                    button.textContent = isActive ? '📌 Watch Later' : '📌 In List';
-                    showMessage(isActive ? 'Removed from watch later' : 'Added to watch later!');
-                } else {
-                    alert('Error: ' + (data.error || 'Failed to update watch later'));
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Failed to update watch later. Please try again.');
-            }
-        }
         
         // Rate Movie
         async function rateMovie(tmdbId, rating) {
+            if (!checkGuestMode()) return;
+            
             // Get movie data from card
             const card = document.querySelector(`.movie-card[data-tmdb-id="${tmdbId}"]`);
             const movieData = {
@@ -611,9 +614,12 @@ try {
             try {
                 const response = await fetch('api/ratings.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': CSRF_TOKEN
+                    },
+                    credentials: 'same-origin',
                     body: JSON.stringify({
-                        user_id: USER_ID,
                         rating: rating,
                         ...movieData
                     })

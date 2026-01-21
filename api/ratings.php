@@ -6,12 +6,10 @@
  * RESTful API for managing movie ratings and reviews.
  * 
  * Supported operations:
- * - GET    /api/ratings.php?user_id={id}&movie_id={id} - Get specific rating
- * - GET    /api/ratings.php?user_id={id} - Get all user ratings
- * - GET    /api/ratings.php?movie_id={id} - Get movie rating statistics
- * - POST   /api/ratings.php - Add new rating
- * - PUT    /api/ratings.php - Update existing rating
- * - DELETE /api/ratings.php - Delete rating
+ * - GET    /api/ratings.php - Get user ratings or movie stats (requires auth)
+ * - POST   /api/ratings.php - Add new rating (requires auth + CSRF)
+ * - PUT    /api/ratings.php - Update existing rating (requires auth + CSRF)
+ * - DELETE /api/ratings.php - Delete rating (requires auth + CSRF)
  * - OPTIONS - CORS preflight
  * 
  * @package MovieSuggestor
@@ -19,27 +17,43 @@
 
 require_once __DIR__ . '/../src/Database.php';
 require_once __DIR__ . '/../src/RatingRepository.php';
+require_once __DIR__ . '/../src/Security.php';
 
 use MovieSuggestor\Database;
 use MovieSuggestor\RatingRepository;
+use MovieSuggestor\Security;
 
 // Enable error logging
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
+// Initialize secure session
+Security::initSession();
+
 // Set JSON response headers
 header('Content-Type: application/json');
 
-// CORS headers
+// CORS headers - restrict to specific domains in production
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-CSRF-Token');
 header('Access-Control-Max-Age: 3600');
 
 // Handle OPTIONS request for CORS preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
+}
+
+// Require authentication for all operations
+Security::requireAuth();
+
+// Get authenticated user ID (NEVER trust client input)
+$authenticatedUserId = Security::getUserId();
+
+// Require CSRF token for state-changing operations
+if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE'])) {
+    Security::requireCSRFToken();
 }
 
 /**
@@ -116,20 +130,15 @@ try {
     switch ($method) {
         case 'GET':
             // Get rating(s)
-            if (isset($_GET['user_id']) && isset($_GET['movie_id'])) {
-                // Get specific user's rating for a movie
-                $userId = filter_var($_GET['user_id'], FILTER_VALIDATE_INT);
+            if (isset($_GET['movie_id'])) {
+                // Get authenticated user's rating for a movie
                 $movieId = filter_var($_GET['movie_id'], FILTER_VALIDATE_INT);
-                
-                if ($userId === false || $userId <= 0) {
-                    sendResponse(null, 400, 'user_id must be a positive integer');
-                }
                 
                 if ($movieId === false || $movieId <= 0) {
                     sendResponse(null, 400, 'movie_id must be a positive integer');
                 }
                 
-                $rating = $ratingRepo->getUserRating($userId, $movieId);
+                $rating = $ratingRepo->getUserRating($authenticatedUserId, $movieId);
                 
                 if ($rating === null) {
                     sendResponse(null, 404, 'Rating not found');
@@ -137,30 +146,8 @@ try {
                 
                 sendResponse(['rating' => $rating]);
                 
-            } elseif (isset($_GET['user_id'])) {
-                // Get all ratings by a user - not currently supported
-                sendResponse(null, 501, 'User ratings list not yet implemented');
-                
-            } elseif (isset($_GET['movie_id'])) {
-                // Get rating statistics for a movie
-                $movieId = filter_var($_GET['movie_id'], FILTER_VALIDATE_INT);
-                
-                if ($movieId === false || $movieId <= 0) {
-                    sendResponse(null, 400, 'movie_id must be a positive integer');
-                }
-                
-                $avgRating = $ratingRepo->getAverageRating($movieId);
-                $ratingCount = $ratingRepo->getRatingsCount($movieId);
-                $ratings = $ratingRepo->getAllRatings($movieId);
-                
-                sendResponse([
-                    'average_rating' => $avgRating,
-                    'rating_count' => $ratingCount,
-                    'ratings' => $ratings
-                ]);
-                
             } else {
-                sendResponse(null, 400, 'user_id or movie_id parameter is required');
+                sendResponse(null, 400, 'movie_id parameter is required');
             }
             break;
             
@@ -172,18 +159,13 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'tmdb_id', 'rating'])) {
-                sendResponse(null, 400, 'user_id, tmdb_id, and rating are required');
+            if (!validateRequired($input, ['tmdb_id', 'rating'])) {
+                sendResponse(null, 400, 'tmdb_id and rating are required');
             }
             
-            $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
             $tmdbId = filter_var($input['tmdb_id'], FILTER_VALIDATE_INT);
             $rating = filter_var($input['rating'], FILTER_VALIDATE_FLOAT);
             $review = isset($input['review']) ? trim($input['review']) : null;
-            
-            if ($userId === false || $userId <= 0) {
-                sendResponse(null, 400, 'user_id must be a positive integer');
-            }
             
             if ($tmdbId === false || $tmdbId <= 0) {
                 sendResponse(null, 400, 'tmdb_id must be a positive integer');
@@ -210,7 +192,7 @@ try {
                 'category' => $input['category'] ?? null
             ];
             
-            $result = $ratingRepo->addRating($userId, $tmdbId, $rating, $movieData, $review);
+            $result = $ratingRepo->addRating($authenticatedUserId, $tmdbId, $rating, $movieData, $review);
             
             if ($result) {
                 sendResponse(['message' => 'Rating saved successfully'], 201);
@@ -227,18 +209,13 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'movie_id', 'rating'])) {
-                sendResponse(null, 400, 'user_id, movie_id, and rating are required');
+            if (!validateRequired($input, ['movie_id', 'rating'])) {
+                sendResponse(null, 400, 'movie_id and rating are required');
             }
             
-            $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
             $movieId = filter_var($input['movie_id'], FILTER_VALIDATE_INT);
             $rating = filter_var($input['rating'], FILTER_VALIDATE_FLOAT);
             $review = isset($input['review']) ? trim($input['review']) : null;
-            
-            if ($userId === false || $userId <= 0) {
-                sendResponse(null, 400, 'user_id must be a positive integer');
-            }
             
             if ($movieId === false || $movieId <= 0) {
                 sendResponse(null, 400, 'movie_id must be a positive integer');
@@ -257,7 +234,7 @@ try {
                 $review = null;
             }
             
-            $result = $ratingRepo->updateRating($userId, $movieId, $rating, $review);
+            $result = $ratingRepo->updateRating($authenticatedUserId, $movieId, $rating, $review);
             
             if ($result) {
                 sendResponse(['message' => 'Rating updated successfully'], 200);
@@ -274,22 +251,17 @@ try {
                 sendResponse(null, 400, 'Invalid JSON input');
             }
             
-            if (!validateRequired($input, ['user_id', 'movie_id'])) {
-                sendResponse(null, 400, 'user_id and movie_id are required');
+            if (!validateRequired($input, ['movie_id'])) {
+                sendResponse(null, 400, 'movie_id is required');
             }
             
-            $userId = filter_var($input['user_id'], FILTER_VALIDATE_INT);
             $movieId = filter_var($input['movie_id'], FILTER_VALIDATE_INT);
-            
-            if ($userId === false || $userId <= 0) {
-                sendResponse(null, 400, 'user_id must be a positive integer');
-            }
             
             if ($movieId === false || $movieId <= 0) {
                 sendResponse(null, 400, 'movie_id must be a positive integer');
             }
             
-            $result = $ratingRepo->deleteRating($userId, $movieId);
+            $result = $ratingRepo->deleteRating($authenticatedUserId, $movieId);
             
             if ($result) {
                 sendResponse(['message' => 'Rating deleted successfully'], 200);

@@ -103,7 +103,7 @@ class RatingRepositoryTest extends TestCase
      */
     public function testAddRatingWithReview(): void
     {
-        $result = $this->repository->addRating(999, 9990, 9.0, 'Excellent movie!');
+        $result = $this->repository->addRating(999, 9990, 9.0, [], 'Excellent movie!');
         
         $this->assertTrue($result);
         
@@ -250,7 +250,7 @@ class RatingRepositoryTest extends TestCase
      */
     public function testUpdateRatingWithReview(): void
     {
-        $this->repository->addRating(999, 9990, 7.0, 'Good movie');
+        $this->repository->addRating(999, 9990, 7.0, [], 'Good movie');
         $result = $this->repository->updateRating(999, 9990, 9.0, 'Great movie!');
         
         $this->assertTrue($result);
@@ -265,7 +265,7 @@ class RatingRepositoryTest extends TestCase
      */
     public function testUpdateRatingClearsReview(): void
     {
-        $this->repository->addRating(999, 9990, 7.0, 'Good movie');
+        $this->repository->addRating(999, 9990, 7.0, [], 'Good movie');
         $result = $this->repository->updateRating(999, 9990, 8.0, null);
         
         $this->assertTrue($result);
@@ -380,7 +380,7 @@ class RatingRepositoryTest extends TestCase
      */
     public function testGetUserRatingReturnsCorrectData(): void
     {
-        $this->repository->addRating(999, 9990, 8.5, 'Great movie!');
+        $this->repository->addRating(999, 9990, 8.5, [], 'Great movie!');
         $rating = $this->repository->getUserRating(999, 9990);
         
         $this->assertNotNull($rating);
@@ -577,7 +577,7 @@ class RatingRepositoryTest extends TestCase
      */
     public function testGetAllRatingsReturnsCorrectStructure(): void
     {
-        $this->repository->addRating(999, 9990, 8.0, 'Good movie');
+        $this->repository->addRating(999, 9990, 8.0, [], 'Good movie');
         $ratings = $this->repository->getAllRatings(9990);
         
         $this->assertCount(1, $ratings);
@@ -715,7 +715,7 @@ class RatingRepositoryTest extends TestCase
     {
         $longReview = str_repeat('This is a great movie! ', 100); // ~2300 chars
         
-        $result = $this->repository->addRating(999, 9990, 9.0, $longReview);
+        $result = $this->repository->addRating(999, 9990, 9.0, [], $longReview);
         $this->assertTrue($result);
         
         $rating = $this->repository->getUserRating(999, 9990);
@@ -729,7 +729,7 @@ class RatingRepositoryTest extends TestCase
     {
         $review = "It's a \"great\" movie! <3 & more...";
         
-        $result = $this->repository->addRating(999, 9990, 9.0, $review);
+        $result = $this->repository->addRating(999, 9990, 9.0, [], $review);
         $this->assertTrue($result);
         
         $rating = $this->repository->getUserRating(999, 9990);
@@ -743,7 +743,7 @@ class RatingRepositoryTest extends TestCase
     {
         $maliciousReview = "'; DROP TABLE ratings; --";
         
-        $result = $this->repository->addRating(999, 9990, 8.0, $maliciousReview);
+        $result = $this->repository->addRating(999, 9990, 8.0, [], $maliciousReview);
         $this->assertTrue($result);
         
         // Verify rating was added safely

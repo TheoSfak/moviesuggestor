@@ -33,12 +33,28 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../src/Security.php';
 
 use MovieSuggestor\TMDBService;
+use MovieSuggestor\Security;
 
 // Enable error logging but hide errors from output
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
+
+// Apply rate limiting (10 requests per 60 seconds per IP)
+// TMDB search is public but should be rate-limited to prevent abuse
+$clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+$rateLimitKey = 'tmdb_search_' . $clientIp;
+
+if (!Security::checkRateLimit($rateLimitKey, 10, 60)) {
+    http_response_code(429);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Too many requests. Please wait a moment before searching again.'
+    ]);
+    exit;
+}
 
 try {
     // Initialize TMDB service

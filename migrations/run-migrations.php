@@ -29,7 +29,9 @@ class MigrationRunner
         '002_create_favorites_table',
         '003_create_watch_later_table',
         '004_create_ratings_table',
-        '005_create_indexes'
+        '005_create_indexes',
+        '007_tmdb_integration',
+        '008_create_users_and_security_tables'
     ];
     
     public function __construct()

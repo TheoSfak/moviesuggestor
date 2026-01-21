@@ -28,13 +28,19 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../src/Security.php';
 
 use MovieSuggestor\Database;
 use MovieSuggestor\TMDBService;
+use MovieSuggestor\Security;
 
 // Enable error logging but hide errors from output
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
+
+// Initialize secure session and require authentication
+Security::initSession();
+Security::requireAuth();
 
 // Only accept POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -45,6 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ]);
     exit;
 }
+
+// Require CSRF token for this state-changing operation
+Security::requireCSRFToken();
 
 try {
     // Parse JSON input

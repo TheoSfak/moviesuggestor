@@ -72,10 +72,8 @@ class TMDBService
             'page' => max(1, $page),
             'include_adult' => 'false'
         ];
-
-        $url = self::API_BASE_URL . '/search/movie?' . http_build_query($params);
         
-        $response = $this->makeRequest($url);
+        $response = $this->makeRequest('/search/movie', $params);
         
         // Standardize response format
         if ($response['success']) {
@@ -94,18 +92,47 @@ class TMDBService
     public function getMovieDetails(int $tmdbId): array
     {
         if (empty($this->apiKey)) {
-            return $this->errorResponse('TMDB API key not configured');
+            return [];
         }
 
+        $endpoint = "/movie/{$tmdbId}";
         $params = [
             'api_key' => $this->apiKey,
             'language' => $this->language,
             'append_to_response' => 'credits,videos,external_ids'
         ];
-
-        $url = self::API_BASE_URL . "/movie/{$tmdbId}?" . http_build_query($params);
         
-        return $this->makeRequest($url);
+        $response = $this->makeRequest($endpoint, $params);
+        
+        if ($response['success'] && isset($response['data'])) {
+            $movie = $response['data'];
+            
+            // Format the movie with all details
+            return [
+                'id' => $movie['id'] ?? 0,
+                'title' => $movie['title'] ?? 'Unknown',
+                'original_title' => $movie['original_title'] ?? '',
+                'overview' => $movie['overview'] ?? 'No description available',
+                'tagline' => $movie['tagline'] ?? '',
+                'poster_path' => $this->getPosterUrl($movie['poster_path'] ?? null),
+                'backdrop_path' => $this->getBackdropUrl($movie['backdrop_path'] ?? null),
+                'release_date' => $movie['release_date'] ?? '',
+                'vote_average' => $movie['vote_average'] ?? 0,
+                'vote_count' => $movie['vote_count'] ?? 0,
+                'popularity' => $movie['popularity'] ?? 0,
+                'runtime' => $movie['runtime'] ?? 0,
+                'budget' => $movie['budget'] ?? 0,
+                'revenue' => $movie['revenue'] ?? 0,
+                'original_language' => $movie['original_language'] ?? '',
+                'genres' => $movie['genres'] ?? [],
+                'production_companies' => $movie['production_companies'] ?? [],
+                'credits' => $movie['credits'] ?? [],
+                'videos' => $movie['videos'] ?? [],
+                'external_ids' => $movie['external_ids'] ?? []
+            ];
+        }
+        
+        return [];
     }
 
     /**
@@ -214,10 +241,8 @@ class TMDBService
         if (!empty($filters['with_original_language'])) {
             $params['with_original_language'] = $filters['with_original_language'];
         }
-
-        $url = self::API_BASE_URL . '/discover/movie?' . http_build_query($params);
         
-        $response = $this->makeRequest($url);
+        $response = $this->makeRequest('/discover/movie', $params);
         
         // Standardize response format
         if ($response['success']) {
@@ -329,15 +354,7 @@ class TMDBService
             'page' => max(1, $page)
         ];
 
-        $url = self::API_BASE_URL . '/movie/popular?' . http_build_query($params);
-        
-        $response = $this->makeRequest($url);
-        
-        // Standardize response format
-        if ($response['success']) {
-            return $this->formatMovieResults($response['data']);
-        }
-        
+        $response = $this->makeRequest('/movie/popular', $params);
         return $response;
     }
 
@@ -456,12 +473,25 @@ class TMDBService
         
         $response = $this->makeRequest($url);
         
+        // First try TMDB official trailer
         if ($response['success'] && isset($response['data']['results'])) {
             foreach ($response['data']['results'] as $video) {
                 if ($video['type'] === 'Trailer' && $video['site'] === 'YouTube') {
                     return 'https://www.youtube.com/watch?v=' . $video['key'];
                 }
             }
+        }
+        
+        // Fallback: Get movie details and search YouTube directly
+        $movieResponse = $this->makeRequest("/movie/{$tmdbId}", $params);
+        
+        if ($movieResponse['success'] && isset($movieResponse['data']['title'])) {
+            $title = $movieResponse['data']['title'];
+            $year = isset($movieResponse['data']['release_date']) ? substr($movieResponse['data']['release_date'], 0, 4) : '';
+            
+            // Generate YouTube search URL
+            $searchQuery = urlencode($title . ' ' . $year . ' official trailer');
+            return 'https://www.youtube.com/results?search_query=' . $searchQuery;
         }
         
         return null;
@@ -494,8 +524,16 @@ class TMDBService
      * @param string $url Request URL
      * @return array Decoded JSON response or error
      */
-    private function makeRequest(string $url): array
+    private function makeRequest(string $endpoint, array $params = []): array
     {
+        // Ensure API key is in params
+        if (!isset($params['api_key']) && !empty($this->apiKey)) {
+            $params['api_key'] = $this->apiKey;
+        }
+        
+        // Build full URL
+        $url = self::API_BASE_URL . $endpoint . '?' . http_build_query($params);
+        
         // Try cURL first (preferred method)
         if (function_exists('curl_init')) {
             return $this->makeRequestCurl($url);
@@ -657,5 +695,87 @@ class TMDBService
     public static function getGenreMap(): array
     {
         return self::GENRE_MAP;
+    }
+
+    /**
+     * Get movie videos (trailers, teasers, etc.)
+     * 
+     * @param int $tmdbId TMDB movie ID
+     * @return array List of videos
+     */
+    public function getMovieVideos(int $tmdbId): array
+    {
+        if (!$this->isConfigured()) {
+            return [];
+        }
+
+        $endpoint = "/movie/{$tmdbId}/videos";
+        $params = ['api_key' => $this->apiKey];
+        
+        $response = $this->makeRequest($endpoint, $params);
+        
+        if ($response['success'] && isset($response['data']['results'])) {
+            return $response['data']['results'];
+        }
+        
+        return [];
+    }
+
+    /**
+     * Get movie images (backdrops, posters)
+     * 
+     * @param int $tmdbId TMDB movie ID
+     * @return array Images data
+     */
+    public function getMovieImages(int $tmdbId): array
+    {
+        if (!$this->isConfigured()) {
+            return ['backdrops' => [], 'posters' => []];
+        }
+
+        $endpoint = "/movie/{$tmdbId}/images";
+        $params = ['api_key' => $this->apiKey];
+        
+        $response = $this->makeRequest($endpoint, $params);
+        
+        if ($response['success'] && isset($response['data'])) {
+            return [
+                'backdrops' => $response['data']['backdrops'] ?? [],
+                'posters' => $response['data']['posters'] ?? []
+            ];
+        }
+        
+        return ['backdrops' => [], 'posters' => []];
+    }
+
+    /**
+     * Get similar movies
+     * 
+     * @param int $tmdbId TMDB movie ID
+     * @param int $page Page number
+     * @param int $limit Limit results
+     * @return array List of similar movies
+     */
+    public function getSimilarMovies(int $tmdbId, int $page = 1, int $limit = 20): array
+    {
+        if (!$this->isConfigured()) {
+            return [];
+        }
+
+        $endpoint = "/movie/{$tmdbId}/similar";
+        $params = [
+            'api_key' => $this->apiKey,
+            'language' => $this->language,
+            'page' => $page
+        ];
+        
+        $response = $this->makeRequest($endpoint, $params);
+        
+        if ($response['success'] && isset($response['data']['results'])) {
+            $movies = array_slice($response['data']['results'], 0, $limit);
+            return array_map([$this, 'formatMovie'], $movies);
+        }
+        
+        return [];
     }
 }

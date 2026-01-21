@@ -121,9 +121,9 @@ class FavoritesRepository
         }
 
         try {
-            $sql = "SELECT tmdb_id as id, tmdb_id, movie_title as title, 
-                           poster_url, release_year as year, category, 
-                           created_at as favorited_at
+            $sql = "SELECT tmdb_id, movie_title, 
+                           poster_url, release_year, category, 
+                           created_at
                     FROM favorites
                     WHERE user_id = :user_id
                     ORDER BY created_at DESC";
